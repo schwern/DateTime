@@ -16,6 +16,8 @@ use constant MAX_NANOSECONDS => 1_000_000_000;  # 1E9 = almost 32 bits
 
 my @all_units = qw( months days minutes seconds nanoseconds );
 
+# XXX - need to reject non-integers but accept infinity, NaN, &
+# 1.56e+18
 sub new
 {
     my $class = shift;
@@ -152,6 +154,7 @@ sub in_units
         $ret{hours} = int( $minutes / 60 );
         $minutes -= $ret{hours} * 60;
     }
+
     if ( $units{minutes} )
     {
         $ret{minutes} = $minutes
@@ -382,6 +385,8 @@ This method takes the parameters "years", "months", "weeks", "days",
 of these except "end_of_month" are numbers.  If any of the numbers are
 negative, the entire duration is negative.
 
+All of the numbers B<must be integers>.
+
 Internally, years as just treated as 12 months.  Similarly, weeks are
 treated as 7 days, and hours are converted to minutes.  Seconds and
 nanoseconds are both treated separately.
@@ -425,6 +430,28 @@ after taking away the larger units given, so for example:
   $dur->in_units( 'years' );            # 2
   $dur->in_units( 'months' );           # 27
   $dur->in_units( 'years', 'months' );  # (2, 3)
+  $dur->in_units( 'weeks', 'days' );    # (0, 0) !
+
+
+The last example demonstrates that there will not be any conversion
+between units which don't have a fixed conversion rate.  The only
+conversions possible are:
+
+=over 8
+
+=item * year <=> months
+
+=item * weeks <=> days
+
+=item * hours <=> minutes
+
+=item * seconds <=> nanoseconds
+
+=back
+
+For the explanation of why this happens, please see the L<How Date
+Math is Done|DateTime/"How Date Math is Done"> section of the
+DateTime.pm documentation
 
 Note that the numbers returned by this method may not match the values
 given to the constructor.
