@@ -4,7 +4,7 @@
 
 use strict;
 
-use Test::More tests => 117;
+use Test::More tests => 123;
 
 use DateTime;
 
@@ -30,9 +30,9 @@ while (<DATA>)
         next;
     }
 
-    my ($fmt, $res) = split /\t+/,$_;
+    my ($fmt, $res) = split /\t/, $_;
 
-    is( $dt->strftime($fmt), $res );
+    is( $dt->strftime($fmt), $res, "$fmt" );
 }
 
 # test use of strftime with multiple params - in list and scalar
@@ -45,11 +45,11 @@ while (<DATA>)
                           );
 
     my ($y, $d) = $dt->strftime( '%Y', '%d' );
-    is( $y, 1800 );
-    is( $d, 10 );
+    is( $y, 1800, 'first value is year' );
+    is( $d, 10, 'second value is day' );
 
     $y = $dt->strftime( '%Y', '%d' );
-    is( $y, 1800 );
+    is( $y, 1800, 'scalar context returns year' );
 }
 
 {
@@ -58,32 +58,32 @@ while (<DATA>)
                             minute => 0
                           ) ;
 
-    is($dt->strftime('%I %M %p'), '12 00 AM');
-    is($dt->strftime('%l %M %p'), '12 00 AM');
+    is( $dt->strftime('%I %M %p'), '12 00 AM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), '12 00 AM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 1) ;
-    is($dt->strftime('%I %M %p'), '01 00 AM');
-    is($dt->strftime('%l %M %p'), ' 1 00 AM');
+    is( $dt->strftime('%I %M %p'), '01 00 AM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), ' 1 00 AM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 11) ;
-    is($dt->strftime('%I %M %p'), '11 00 AM');
-    is($dt->strftime('%l %M %p'), '11 00 AM');
+    is( $dt->strftime('%I %M %p'), '11 00 AM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), '11 00 AM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 12) ;
-    is($dt->strftime('%I %M %p'), '12 00 PM');
-    is($dt->strftime('%l %M %p'), '12 00 PM');
+    is( $dt->strftime('%I %M %p'), '12 00 PM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), '12 00 PM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 13) ;
-    is($dt->strftime('%I %M %p'), '01 00 PM');
-    is($dt->strftime('%l %M %p'), ' 1 00 PM');
+    is( $dt->strftime('%I %M %p'), '01 00 PM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), ' 1 00 PM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 23) ;
-    is($dt->strftime('%I %M %p'), '11 00 PM');
-    is($dt->strftime('%l %M %p'), '11 00 PM');
+    is( $dt->strftime('%I %M %p'), '11 00 PM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), '11 00 PM', 'formatting of hours as 1-12' );
 
     $dt->set(hour => 0) ;
-    is($dt->strftime('%I %M %p'), '12 00 AM');
-    is($dt->strftime('%l %M %p'), '12 00 AM');
+    is( $dt->strftime('%I %M %p'), '12 00 AM', 'formatting of hours as 1-12' );
+    is( $dt->strftime('%l %M %p'), '12 00 AM', 'formatting of hours as 1-12' );
 }
 
 
@@ -139,6 +139,8 @@ year => 1999, month => 9, day => 7, hour => 13, minute => 2, second => 42, nanos
 %Y	1999
 %Z	UTC
 %z	+0000
+%{month}	9
+%{year}	1999
 German
 %y	99
 %Y	1999
@@ -172,6 +174,8 @@ German
 %Y	1999
 %Z	UTC
 %z	+0000
+%{month}	9
+%{year}	1999
 Italian
 %y	99
 %Y	1999
@@ -205,3 +209,5 @@ Italian
 %Y	1999
 %Z	UTC
 %z	+0000
+%{month}	9
+%{year}	1999

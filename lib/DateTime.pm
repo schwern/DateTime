@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.12';
+    $VERSION = '0.13';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -26,7 +26,15 @@ BEGIN
         $loaded = 1;
     }
 
-    require DateTimePP unless $loaded;
+    if ($loaded)
+    {
+        require DateTimePPExtra
+            unless defined &DateTime::_normalize_tai_seconds;
+    }
+    else
+    {
+        require DateTimePP;
+    }
 }
 
 use DateTime::Duration;
@@ -92,25 +100,63 @@ BEGIN
 }
 __PACKAGE__->DefaultLanguage('English');
 
+my $BasicValidate =
+    { year   => { type => SCALAR },
+      month  => { type => SCALAR, default => 1,
+                  callbacks =>
+                  { 'is between 1 and 12' =>
+                    sub { $_[0] >= 1 && $_[0] <= 12 }
+                  },
+                },
+      day    => { type => SCALAR, default => 1,
+                  callbacks =>
+                  { 'is between 1 and 31' =>
+                    sub { $_[0] >= 1 && $_[0] <= 31 },
+                  },
+                },
+      hour   => { type => SCALAR, default => 0,
+                  callbacks =>
+                  { 'is between 0 and 23' =>
+                    sub { $_[0] >= 0 && $_[0] <= 23 },
+                  },
+                },
+      minute => { type => SCALAR, default => 0,
+                  callbacks =>
+                  { 'is between 0 and 59' =>
+                    sub { $_[0] >= 0 && $_[0] <= 59 },
+                  },
+                },
+      second => { type => SCALAR, default => 0,
+                  callbacks =>
+                  { 'is between 0 and 61' =>
+                    sub { $_[0] >= 0 && $_[0] <= 61 },
+                  },
+                },
+      nanosecond => { type => SCALAR, default => 0,
+                      callbacks =>
+                      { 'cannot be negative' =>
+                        sub { $_[0] >= 0 },
+                      }
+                    },
+      language  => { type => SCALAR | OBJECT,
+                     default => __PACKAGE__->DefaultLanguage },
+    };
+
+my $NewValidate =
+    { %$BasicValidate,
+      time_zone => { type => SCALAR | OBJECT,
+                     default => 'floating' },
+    };
+
 sub new
 {
     my $class = shift;
-    my %p = validate( @_,
-                      { year   => { type => SCALAR },
-                        month  => { type => SCALAR, default => 1 },
-                        day    => { type => SCALAR, default => 1 },
-                        hour   => { type => SCALAR, default => 0 },
-                        minute => { type => SCALAR, default => 0 },
-                        second => { type => SCALAR, default => 0 },
-                        nanosecond => { type => SCALAR, default => 0 },
-                        fractional_second =>
-                        { type => SCALAR, default => undef },
-                        language  => { type => SCALAR | OBJECT,
-                                       default => $class->DefaultLanguage },
-                        time_zone => { type => SCALAR | OBJECT,
-                                       default => 'floating' },
-                      }
-                    );
+    my %p = validate( @_, $NewValidate );
+
+    my $last_day = $class->_last_day_of_month( $p{year}, $p{month} );
+
+    die "Invalid day of month (day = $p{day} - month = $p{month})\n"
+        if $p{day} > $last_day;
 
     my $self = {};
 
@@ -136,13 +182,6 @@ sub new
         $class->_time_as_seconds( @p{ qw( hour minute second ) } );
 
     $self->{rd_nanosecs} = $p{nanosecond};
-
-    if ( defined $p{fractional_second} )
-    {
-        my $int = int( $p{fractional_second} );
-        $self->{local_rd_secs} += $int;
-        $self->{rd_nanosecs} += ( $p{fractional_second} - $int ) * MAX_NANOSECONDS;
-    }
 
     bless $self, $class;
 
@@ -180,9 +219,16 @@ sub _calc_utc_rd
             $self->{local_rd_secs} - $self->_offset_from_local_time;
     }
 
+    $self->_normalize_seconds;
+}
+
+sub _normalize_seconds
+{
+    my $self = shift;
+
     if ( $self->{tz}->is_floating )
     {
-        $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
     else
     {
@@ -195,18 +241,20 @@ sub _normalize_leap_seconds
     # args: 0 => days, 1 => seconds
     my $delta_days;
 
+    use integer;
+
     # rough adjust - can adjust many days
     if ( $_[2] < 0 )
     {
-        $delta_days = int( ($_[2] - 86399) / 86400 );
+        $delta_days = ($_[2] - 86399) / 86400;
     }
     else
     {
-        $delta_days = int( $_[2] / 86400 );
+        $delta_days = $_[2] / 86400;
     }
 
     my $new_day = $_[1] + $delta_days;
-    my $delta_seconds = 86400 * ( $new_day - $_[1] ) +
+    my $delta_seconds = ( 86400 * $delta_days ) +
                         DateTime::LeapSecond::leap_seconds( $new_day ) -
                         DateTime::LeapSecond::leap_seconds( $_[1] );
 
@@ -246,7 +294,8 @@ sub _calc_local_rd
         $self->{local_rd_days} = $self->{utc_rd_days};
         $self->{local_rd_secs} = $self->{utc_rd_secs} + $self->offset;
 
-        $self->_normalize_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
+        # intentionally ignore leap seconds here
+        $self->_normalize_tai_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
     }
 
     $self->_calc_local_components;
@@ -306,10 +355,16 @@ sub from_epoch
                     );
 
     my %args;
+
+    # Because epoch may come from Time::HiRes
+    my $fraction = $p{epoch} - int( $p{epoch} );
+    $args{nanosecond} = $fraction * MAX_NANOSECONDS
+        if $fraction;
+
     # Note, for very large negative values this may give a blatantly
     # wrong answer.
     @args{ qw( second minute hour day month year ) } =
-        ( gmtime( delete $p{epoch} ) )[ 0..5 ];
+        ( gmtime( int delete $p{epoch} ) )[ 0..5 ];
     $args{year} += 1900;
     $args{month}++;
 
@@ -355,26 +410,78 @@ sub from_object
     return $new;
 }
 
+my $LastDayOfMonthValidate = { %$NewValidate };
+foreach ( keys %$LastDayOfMonthValidate )
+{
+    my %copy = %{ $LastDayOfMonthValidate->{$_} };
+
+    delete $copy{default};
+    $copy{optional} = 1 unless $_ eq 'year' || $_ eq 'month';
+
+    $LastDayOfMonthValidate->{$_} = \%copy;
+}
+
 sub last_day_of_month
 {
     my $class = shift;
-    my %p = validate( @_,
-                      { year   => { type => SCALAR },
-                        month  => { type => SCALAR },
-                        hour   => { type => SCALAR, optional => 1 },
-                        minute => { type => SCALAR, optional => 1 },
-                        second => { type => SCALAR, optional => 1 },
-                        language   => { type => SCALAR | OBJECT, optional => 1 },
-                        time_zone  => { type => SCALAR | OBJECT, optional => 1 },
-                      }
-                    );
+    my %p = validate( @_, $LastDayOfMonthValidate );
 
-    my $day = ( $class->_is_leap_year( $p{year} ) ?
-                $LeapYearMonthLengths[ $p{month} - 1 ] :
-                $MonthLengths[ $p{month} - 1 ]
-              );
+    my $day = $class->_last_day_of_month( $p{year}, $p{month} );
 
     return $class->new( %p, day => $day );
+}
+
+sub _last_day_of_month
+{
+    return ( $_[0]->_is_leap_year( $_[1] ) ?
+             $LeapYearMonthLengths[ $_[2] - 1 ] :
+             $MonthLengths[ $_[2] - 1 ]
+           );
+}
+
+my $FromDayOfYearValidate = { %$NewValidate };
+foreach ( keys %$FromDayOfYearValidate )
+{
+    next if $_ eq 'month' || $_ eq 'day';
+
+    my %copy = %{ $FromDayOfYearValidate->{$_} };
+
+    delete $copy{default};
+    $copy{optional} = 1 unless $_ eq 'year' || $_ eq 'month';
+
+    $FromDayOfYearValidate->{$_} = \%copy;
+}
+$FromDayOfYearValidate->{day_of_year} =
+    { type => SCALAR,
+      callbacks =>
+      { 'is between 1 and 366' =>
+        sub { $_[0] >= 1 && $_[0] <= 366 }
+      }
+    };
+sub from_day_of_year
+{
+    my $class = shift;
+    my %p = validate( @_, $FromDayOfYearValidate );
+
+    my $is_leap_year = $class->_is_leap_year( $p{year} );
+
+    die "$p{year} is not a leap year.\n"
+        if $p{day_of_year} == 366 && ! $is_leap_year;
+
+    my $month_lengths = $is_leap_year ? \@LeapYearMonthLengths : \@MonthLengths;
+
+    my $month = 0;
+    my $day = delete $p{day_of_year};
+    while ( $month <= 11 && $day > $month_lengths->[$month] )
+    {
+        $day -= $month_lengths->[$month];
+        $month++;
+    }
+
+    return DateTime->new( %p,
+                          month => $month + 1,
+                          day   => $day,
+                        );
 }
 
 sub clone { bless { %{ $_[0] } }, ref $_[0] }
@@ -384,6 +491,10 @@ sub year    { $_[0]->{local_c}{year} }
 sub ce_year { $_[0]->{local_c}{year} <= 0 ?
               $_[0]->{local_c}{year} - 1 :
               $_[0]->{local_c}{year} }
+
+sub era { $_[0]->ce_year > 0 ? 'CE' : 'BCE' }
+
+sub year_with_era { (abs $_[0]->ce_year) . $_[0]->era }
 
 sub month   { $_[0]->{local_c}{month} }
 *mon = \&month;
@@ -398,6 +509,8 @@ sub month_abbr { $_[0]->{language}->month_abbreviation( $_[0] ) }
 sub day_of_month { $_[0]->{local_c}{day} }
 *day  = \&day_of_month;
 *mday = \&day_of_month;
+
+sub weekday_of_month { use integer; ( ( $_[0]->day - 1 ) / 7 ) + 1 }
 
 sub quarter {$_[0]->{local_c}{quarter} };
 
@@ -464,6 +577,10 @@ sub dmy
 }
 
 sub hour   { $_[0]->{local_c}{hour} }
+sub hour_1 { $_[0]->{local_c}{hour} + 1 }
+
+sub hour_12   { my $h = $_[0]->hour % 12; return $h ? $h : 12 }
+sub hour_12_0 { $_[0]->hour % 12 }
 
 sub minute { $_[0]->{local_c}{minute} }
 *min = \&minute;
@@ -557,6 +674,24 @@ sub _weeks_in_year
 sub week_year   { ($_[0]->week)[0] }
 sub week_number { ($_[0]->week)[1] }
 
+# ISO says that the first week of a year is the first week containing
+# a Thursday.  Extending that says that the first week of the month is
+# the first week containing a Thursday.  ICU agrees.
+#
+# Algorithm supplied by Rick Measham, who doesn't understand how it
+# works.  Neither do I.  Please feel free to explain this to me!
+sub week_of_month
+{
+    my $self = shift;
+
+    # Faster than cloning just to get the dow
+    my $first_wday_of_month = ( 8 - ( $self->day - $self->dow ) % 7 ) % 7;
+    $first_wday_of_month = 7 unless $first_wday_of_month;
+
+    my $wom = int( ( $self->day + $first_wday_of_month - 2 ) / 7 );
+    return ( $first_wday_of_month <= 4 ) ? $wom + 1 : $wom;
+}
+
 sub time_zone { $_[0]->{tz} }
 
 sub offset { $_[0]->{tz}->offset_for_datetime( $_[0] ) }
@@ -607,10 +742,10 @@ my %formats =
       'g' => sub { substr( $_[0]->week_year, -2 ) },
       'G' => sub { $_[0]->week_year },
       'H' => sub { sprintf( '%02d', $_[0]->hour ) },
-      'I' => sub { sprintf( '%02d', $_[0]->_hour_12 ) },
+      'I' => sub { sprintf( '%02d', $_[0]->hour_12 ) },
       'j' => sub { $_[0]->day_of_year },
       'k' => sub { sprintf( '%2d', $_[0]->hour ) },
-      'l' => sub { sprintf( '%2d', $_[0]->_hour_12 ) },
+      'l' => sub { sprintf( '%2d', $_[0]->hour_12 ) },
       'm' => sub { sprintf( '%02d', $_[0]->month ) },
       'M' => sub { sprintf( '%02d', $_[0]->minute ) },
       'n' => sub { "\n" }, # should this be OS-sensitive?
@@ -657,14 +792,20 @@ sub strftime
     my @r;
     foreach my $f (@formats)
     {
-        # regex from Date::Format - thanks Graham!
         $f =~ s/
+	        %{(\w+)}
+	       /
+                $self->$1() if $self->can($1);
+               /sgex;
+
+        # regex from Date::Format - thanks Graham!
+       $f =~ s/
 	        %([%a-zA-Z])
 	       /
                 $formats{$1} ? $formats{$1}->($self) : $1
                /sgex;
 
-        #  %3N 
+        # %3N
         $f =~ s/
                 %(\d+)N
                /
@@ -694,15 +835,6 @@ sub _format_nanosecs
     return substr( $ret, 0, $precision );
 }
 
-sub _hour_12 { my $h = $_[0]->hour % 12; return $h ? $h : 12 }
-
-# The Time::Local included with 5.00503 doesn't have timegm_nocheck,
-# but its timegm doesn't do boundary checking
-my $sub =
-    ( defined &Time::Local::timegm_nocheck ?
-      \&Time::Local::timegm_nocheck :
-      \&Time::Local::timegm
-    );
 sub epoch
 {
     my $self = shift;
@@ -714,13 +846,26 @@ sub epoch
     my @hms = $self->_utc_hms;
 
     $self->{utc_c}{epoch} =
-        eval { $sub->( ( reverse @hms ),
-                       $day,
-                       $month - 1,
-                       $year - 1900,
-                     ) };
+        eval { Time::Local::timegm_nocheck( ( reverse @hms ),
+                                            $day,
+                                            $month - 1,
+                                            $year,
+                                          ) };
 
     return $self->{utc_c}{epoch};
+}
+
+sub hires_epoch
+{
+    my $self = shift;
+
+    my $epoch = $self->epoch;
+
+    return undef unless defined $epoch;
+
+    my $nano = $self->{rd_nanosecs} / MAX_NANOSECONDS;
+
+    return $epoch + $nano;
 }
 
 sub is_finite { 1 }
@@ -740,68 +885,63 @@ sub subtract_datetime
     my $self = shift;
     my $dt = shift;
 
+    # We only want a negative duration if $dt > $self.
+    my ( $bigger, $smaller, $negative ) =
+        ( $self >= $dt ?
+          ( $self, $dt, 0 ) :
+          ( $dt, $self, 1 )
+        );
+
     my $is_floating = $self->time_zone->is_floating &&
                       $dt->time_zone->is_floating;
 
-    # We only want a negative duration if $dt > $self.  If just the
-    # seconds are greater (but the days are equal or less), then
-    # returning a negative duration is wrong.
+    my ( $days, $seconds, $nanoseconds ) =
+        _adjust_for_positive_difference
+            ( $bigger->{utc_rd_days}, $smaller->{utc_rd_days},
+              $bigger->{utc_rd_secs}, $smaller->{utc_rd_secs},
+              $bigger->{rd_nanosecs}, $smaller->{rd_nanosecs},
+              $is_floating,
+            );
 
-    if ( $self->{utc_rd_days} == $dt->{utc_rd_days} )
+    if ($negative)
     {
-        return
-            DateTime::Duration->new
-                ( days        => $self->{utc_rd_days} - $dt->{utc_rd_days},
-                  seconds     => $self->{utc_rd_secs} - $dt->{utc_rd_secs},
-                  nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
-                );
+        # in Perl 5.6.1 on Linux (Red Hat only?), $_ = 0; $_ * -1
+        # gives -0 !!!
+
+        for ( $days, $seconds, $nanoseconds )
+        {
+            $_ *= -1 if $_;
+        }
     }
-    elsif ( $self->{utc_rd_days} > $dt->{utc_rd_days} &&
-            $self->{utc_rd_secs} < $dt->{utc_rd_secs} )
-    {
-        my $days = $self->{utc_rd_days} - 1;
-        my $secs;
-        if ( $is_floating )
-        {
-            $secs = $self->{utc_rd_secs} + 86400;
-        }
-        else
-        {
-            $secs = $self->{utc_rd_secs} + DateTime::LeapSecond::day_length( $days );
-        }
-        return DateTime::Duration->new
-            ( days        => $days - $dt->{utc_rd_days},
-              seconds     => $secs - $dt->{utc_rd_secs},
-              nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
+
+    return
+        DateTime::Duration->new
+            ( days        => $days,
+              seconds     => $seconds,
+              nanoseconds => $nanoseconds,
             );
-    }
-    elsif ( $dt->{utc_rd_days} > $self->{utc_rd_days} &&
-            $dt->{utc_rd_secs} < $self->{utc_rd_secs} )
+}
+
+sub _adjust_for_positive_difference
+{
+    my ( $day1, $day2, $sec1, $sec2, $nano1, $nano2, $is_floating ) = @_;
+
+    if ( $nano1 < $nano2 )
     {
-        my $days = $dt->{utc_rd_days} - 1;
-        my $secs;
-        if ( $is_floating )
-        {
-            $secs = $self->{utc_rd_secs} + 86400;
-        }
-        else
-        {
-            $secs = $dt->{utc_rd_secs} + DateTime::LeapSecond::day_length( $days );
-        }
-        return DateTime::Duration->new
-            ( days    => $self->{utc_rd_days} - $days,
-              seconds => $self->{utc_rd_secs} - $secs,
-              nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
-            );
+        $sec1--;
+        $nano1 += MAX_NANOSECONDS;
     }
-    else
+
+    if ( $sec1 < $sec2 )
     {
-        return DateTime::Duration->new
-            ( days    => $self->{utc_rd_days} - $dt->{utc_rd_days},
-              seconds => $self->{utc_rd_secs} - $dt->{utc_rd_secs},
-              nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
-            );
+        $day1--;
+        $sec1 += $is_floating ? 86400 : DateTime::LeapSecond::day_length($day1);
     }
+
+    return ( $day1 - $day2,
+             $sec1 - $sec2,
+             $nano1 - $nano2,
+           );
 }
 
 sub _add_overload
@@ -915,7 +1055,8 @@ sub add_duration
     {
         $self->{utc_rd_secs} += $deltas{minutes} * 60;
 
-        $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        # This intentionally ignores leap seconds
+        $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
 
     # We add seconds to the UTC time because if someone adds 24 hours,
@@ -933,15 +1074,7 @@ sub add_duration
 
         # must always normalize seconds, because a nanosecond change
         # might cause a day change
-
-        if ( $self->time_zone->is_floating )
-        {
-            $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
-        }
-        else
-        {
-            $self->_normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
-        }
+        $self->_normalize_seconds;
     }
 
     if ( $deltas{minutes} || $deltas{seconds} || $deltas{nanoseconds})
@@ -1003,47 +1136,46 @@ sub _compare
         }
     }
 
-    my ($days1, $secs1) = $dt1->utc_rd_values;
-    my ($days2, $secs2) = $dt2->utc_rd_values;
+    foreach my $component ( qw( utc_rd_days utc_rd_secs rd_nanosecs ) )
+    {
+        return $dt1->{$component} <=> $dt2->{$component}
+            if $dt1->{$component} != $dt2->{$component};
+    }
 
-    return $days1 <=> $days2 if $days1 != $days2;
-
-    return $secs1 <=> $secs2 if $secs1 != $secs2;
-
-    return $dt1->nanosecond <=> $dt2->nanosecond;
+    return 0;
 }
 
 sub _normalize_nanoseconds
 {
+    use integer;
+
     # seconds, nanoseconds
     if ( $_[2] < 0 )
     {
-        my $overflow = 1 + int( $_[2] / MAX_NANOSECONDS );
+        my $overflow = 1 + $_[2] / MAX_NANOSECONDS;
         $_[2] += $overflow * MAX_NANOSECONDS;
         $_[1] -= $overflow;
     }
     elsif ( $_[2] >= MAX_NANOSECONDS )
     {
-        my $overflow = int( $_[2] / MAX_NANOSECONDS );
+        my $overflow = $_[2] / MAX_NANOSECONDS;
         $_[2] -= $overflow * MAX_NANOSECONDS;
         $_[1] += $overflow;
     }
 }
 
-
+# Many of the same parameters as new() but all of them are optional,
+# and there are no defaults.
+my $SetValidate =
+    { map { my %copy = %{ $BasicValidate->{$_} };
+            delete $copy{default};
+            $copy{optional} = 1;
+            $_ => \%copy }
+      keys %$BasicValidate };
 sub set
 {
     my $self = shift;
-    my %p = validate( @_,
-                      { year     => { type => SCALAR, optional => 1 },
-                        month    => { type => SCALAR, optional => 1 },
-                        day      => { type => SCALAR, optional => 1 },
-                        hour     => { type => SCALAR, optional => 1 },
-                        minute   => { type => SCALAR, optional => 1 },
-                        second   => { type => SCALAR, optional => 1 },
-                        nanosecond => { type => SCALAR, optional => 1 },
-                        language => { type => SCALAR, optional => 1 },
-                      } );
+    my %p = validate( @_, $SetValidate );
 
     my %old_p =
         ( map { $_ => $self->$_() }
@@ -1106,6 +1238,49 @@ sub set_time_zone
     {
         $self->_calc_local_rd;
     }
+
+    return $self;
+}
+
+sub STORABLE_freeze
+{
+    my $self = shift;
+    my $cloning = shift;
+
+    my $data = '';
+    foreach my $key ( qw( utc_rd_days
+                          utc_rd_secs
+                          rd_nanosecs ) )
+    {
+        $data .= "$key:$self->{$key}|";
+    }
+
+    my $lang = ref $self->{language};
+    $lang =~ s/^DateTime::Language:://;
+
+    $data .= "language:$lang";
+    $data .= "|tz:" . $self->{tz}->name;
+    $data .= "|version:$VERSION";
+
+    return $data;
+}
+
+sub STORABLE_thaw
+{
+    my $self = shift;
+    my $cloning = shift;
+    my $data = shift;
+
+    my %data = map { split /:/ } split /\|/, $data;
+
+    my $tz = DateTime::TimeZone->new( name => delete $data{tz} );
+    my $lang = delete $data{language};
+
+    %$self = %data;
+    $self->{tz} = $tz;
+    $self->{language} = DateTime::Language->new( language => $lang );
+
+    $self->_calc_local_rd;
 
     return $self;
 }
@@ -1268,12 +1443,11 @@ All constructors can die when invalid parameters are given.
 
 This class method accepts parameters for each date and time component:
 "year", "month", "day", "hour", "minute", "second", "nanosecond".
-Additionally, it accepts "fractional_second", "language",
-and "time_zone" parameters.
+Additionally, it "language", and "time_zone" parameters.
 
-  my $dt = DateTime->new( day    => 25,
+  my $dt = DateTime->new( year   => 1066,
                           month  => 10,
-                          year   => 1066,
+                          day    => 25,
                           hour   => 7,
                           minute => 15,
                           second => 47,
@@ -1281,23 +1455,52 @@ and "time_zone" parameters.
                           time_zone  => 'America/Chicago',
                         );
 
-If a "fractional_second" parameter is given, then the "nanosecond"
-parameter will be ignored.
+DateTime validates the "month", "day", "hour", "minute", and "second",
+and "nanosecond" parameters.  The valid values for these parameters are:
 
-The behavior of this module when given parameters outside proper
-boundaries (like a minute parameter of 72) is not defined, though
-future versions may die.
+=over 8
+
+=item * month
+
+1-12
+
+=item * day
+
+1-31, and it must be within the valid range of days for the specified
+month
+
+=item * hour
+
+0-23
+
+=item * minute
+
+0-59
+
+=item * second
+
+0-61 (to allow for leap seconds)
+
+=item * nanosecond
+
+>= 0
+
+=back
 
 Invalid parameter types (like an array reference) will cause the
 constructor to die.
+
+DateTime does not check if second values greater than 59 are valid
+based on current leap seconds, and invalid values simply cause an
+overflow.
 
 All of the parameters are optional except for "year".  The "month" and
 "day" parameters both default to 1, while the "hour", "minute", and
 "second", and "nanosecond" parameters all default to 0.
 
 The language parameter should be a string matching one of the valid
-languages.  See the L<DateTime::Language|DateTime::Language>
-documentation for details.
+languages, or a C<DateTime::Language> object.  See the
+L<DateTime::Language|DateTime::Language> documentation for details.
 
 The time_zone parameter can be either a scalar or a
 C<DateTime::TimeZone> object.  A string will simply be passed to the
@@ -1362,6 +1565,10 @@ This class method can be used to construct a new DateTime object from
 an epoch time instead of components.  Just as with the C<new()>
 method, it accepts "time_zone" and "language" parameters.
 
+If the epoch value is not an integer, the part after the decimal will
+be converted to nanoseconds.  This is done in order to be compatible
+with C<Time::HiRes>.
+
 =item * now( ... )
 
 This class method is equivalent to calling C<from_epoch()> with the
@@ -1391,6 +1598,14 @@ This constructor takes the same arguments as can be given to the
 C<new()> method, except for "day".  Additionally, both "year" and
 "month" are required.
 
+=item * from_day_of_year( ... )
+
+This constructor takes the same arguments as can be given to the
+C<new()> method, except that it does not accept a "month" or "day"
+argument.  Instead, it requires both "year" and "day_of_year".  The
+day of year must be between 1 and 366, and 366 is only allowed for
+leap years.
+
 =item * clone
 
 This object method returns a replica of the given object.
@@ -1412,6 +1627,16 @@ Returns the year.
 
 Returns the year according to the BCE/CE numbering system.  The year
 before year 1 in this system is year -1, aka "1 BCE".
+
+=item * era
+
+Returns a string, either "BCE" or "CE", according to the year.
+
+=item * year_with_era
+
+Returns a string containing the year immediately followed by its era.
+The year is the absolute value of C<ce_year()>, so that year 1 is
+"1CE" and year 0 is "1BCE".
 
 =item * month
 
@@ -1450,13 +1675,19 @@ L<LANGUAGES|/LANGUAGES> section for more details.
 
 Returns the day of the year.
 
+=item * quarter
+
+Returns the quarter of the year, from 1..4.
+
 =item * day_of_quarter, doq
 
 Returns the day of the quarter.
 
-=item * quarter
+=item * weekday_of_month
 
-Returns the quarter of the year, from 1..4.
+Returns a number from 1..5 indicating which week day of the month this
+is.  For example, June 9, 2003 is the second Monday of the month, and
+so this method returns 2 for that day.
 
 =item * ymd( $optional_separator ), date
 
@@ -1474,6 +1705,18 @@ overridden by passing a value to the method.
 =item * hour
 
 Returns the hour of the day, from 0..23.
+
+=item * hour_1
+
+Returns the hour of the day, from 1..24.
+
+=item * hour_12
+
+Returns the hour of the day, from 1..12.
+
+=item * hour_12_0
+
+Returns the hour of the day, from 0..11.
 
 =item * minute, min
 
@@ -1551,6 +1794,14 @@ Returns the year of the week.
 
 Returns the week of the year, from 1..53.
 
+=item * week_of_month
+
+The week of the month, from 0..5.  The first week of the month is the
+first week that contains a Thursday.  This is based on the ICU
+definition of week of month, and correlates to the ISO8601 week of
+year definition.  A day in the week I<before> the week with the first
+Thursday will be week 0.
+
 =item * jd, mjd
 
 These return the Julian Day and Modified Julian Day, respectively.
@@ -1594,17 +1845,26 @@ is implemented using C<Time::Local>, which uses the Unix epoch even on
 machines with a different epoch (such as MacOS).  Datetimes before the
 start of the epoch will be returned as a negative number.
 
+This return value from this method is always an integer.
+
 Since the epoch does not account for leap seconds, the epoch time for
 1971-12-31T23:59:60 (UTC) is exactly the same as that for
 1972-01-01T00:00:00.
 
-Since epoch times cannot represent many dates on most platforms, this
+Epoch times cannot represent many dates on most platforms, and this
 method may simply return undef in some cases.
 
 Using your system's epoch time may be error-prone, since epoch times
 have such a limited range on 32-bit machines.  Additionally, the fact
 that different operating systems have different epoch beginnings is
 another source of possible bugs.
+
+=item * hires_epoch
+
+Returns the epoch as a floating point number.  The floating point
+portion of the value represents the nanosecond value of the object.
+This method is provided for compatibility with the C<Time::HiRes>
+module.
 
 =item * is_finite, is_infinite
 
@@ -1654,6 +1914,9 @@ or its language.  This method accepts any parameter allowed by the
 C<new()> method except for "time_zone".  Time zones may be set using
 the C<set_time_zone()> method.
 
+This method performs parameters validation just as is done in the
+C<new()> method.
+
 =item * truncate( to => ... )
 
 This method allows you to reset some of the local time components in
@@ -1674,11 +1937,11 @@ For example:
 
   my $dt = DateTime->new( year => 2000, month => 5, day => 10,
                           hour => 15, minute => 15,
-                          time_zone => '-0600', );
+                          time_zone => 'America/Los_Angeles', );
 
   print $dt->hour; # prints 15
 
-  $dt->set_time_zone( '-0400' );
+  $dt->set_time_zone( 'America/Chicago' );
 
   print $dt->hour; # prints 17
 
@@ -2069,12 +2332,26 @@ The time zone or name or abbreviation.
 
 A literal `%' character.
 
+=item * %{method}
+
+Any method name may be specified using the format C<%{method}> name
+where "method" is a valid C<DateTime.pm> object method.
+
 =back
+
+=head1 DateTime.pm and Storable
+
+As of version 0.13, DateTime implements Storable hooks in order to
+reduce the size of a serialized DateTime object.
 
 =head1 SUPPORT
 
 Support for this module is provided via the datetime@perl.org email
 list.  See http://lists.perl.org/ for more details.
+
+Please submit bugs to the CPAN RT system at
+http://rt.cpan.org/NoAuth/ReportBug.html?Queue=datetime or via email
+at bug-datetime@rt.cpan.org.
 
 =head1 AUTHOR
 

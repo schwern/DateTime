@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 72;
+use Test::More tests => 73;
 
 use DateTime;
 
@@ -32,4 +32,10 @@ foreach my $month (1..12)
     is( $dt->year, 2004, 'check year' );
     is( $dt->month, $month, 'check month' );
     is( $dt->day, $leap_last[ $month - 1 ], 'check day' );
+}
+
+{
+    eval { DateTime->last_day_of_month( year => 2000, month => 1, nanosecond => 2000 ) };
+    is( $@, '',
+        "last_day_of_month should accept nanosecond" );
 }

@@ -9,7 +9,17 @@
 #include "XSUB.h"
 #include "ppport.h"
 
-#include <math.h>
+/* This is a temporary hack until a better solution can be found to
+   get the finite() function on Win32 */
+#ifndef WIN32
+#  include <math.h>
+#
+#  ifndef isfinite
+#    ifdef finite
+#      define finite isfinite
+#    endif
+#  endif
+#endif
 
 /* 2 ** 28 - 307 */
 #define RANGE_CUTOFF        (268435456 - 307)
@@ -200,20 +210,21 @@ _seconds_as_components(self, secs, utc_secs = 0)
         PUSHs(sv_2mortal(newSViv(m)));
         PUSHs(sv_2mortal(newSViv(s)));
 
+#ifdef isfinite
 void
-_normalize_seconds(self, days, secs)
+_normalize_tai_seconds(self, days, secs)
      SV* self;
      SV* days;
      SV* secs;
 
      PPCODE:
-        if (finite(SvNV(days)) && finite(SvNV(secs))) {
+        if (isfinite(SvNV(days)) && isfinite(SvNV(secs))) {
           IV d = SvIV(days);
           IV s = SvIV(secs);
           IV adj;
 
           if (s < 0) {
-            adj = (s - 86399) / SECONDS_PER_DAY;
+            adj = (s - (SECONDS_PER_DAY - 1)) / SECONDS_PER_DAY;
           } else {
             adj = s / SECONDS_PER_DAY;
           }
@@ -224,6 +235,8 @@ _normalize_seconds(self, days, secs)
           sv_setiv(days, (IV) d);
           sv_setiv(secs, (IV) s);
         }
+
+#endif /* finite */
 
 void
 _time_as_seconds(self, h, m, s)

@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 30;
+use Test::More tests => 55;
 
 use DateTime;
 
@@ -21,13 +21,13 @@ my $date2 = DateTime->new( year => 2001, month => 6, day => 12,
 my $diff = $date2 - $date1;
 
 is( $diff->delta_days, 33, 'delta_days should be 33' );
-is( $diff->delta_seconds, 3861, 'delta_seconds should be 3861' );
+is( $diff->delta_seconds, 3860, 'delta_seconds should be 3860' );
 is( $diff->weeks,   4,  'Weeks' );
 is( $diff->days,    5,  'Days' );
 is( $diff->hours,   0,  'Hours' );
 is( $diff->minutes, 0,  'Min' );
-is( $diff->seconds, 3861, 'Sec' );
-is( $diff->nanoseconds, 5, 'ns' );
+is( $diff->seconds, 3860, 'Sec' );
+is( $diff->nanoseconds, 999_999_995, 'ns' );
 
 my $d = DateTime->new( year => 2001, month => 10, day => 19,
                        hour => 5, minute => 1, second => 1,
@@ -113,3 +113,123 @@ is( fake_ical($X), '20011011T040000Z', 'Subtract and get the right thing' );
     is ( $dt->day, 11, 'days normalize ok' );
 }
 
+# test for a bug when nanoseconds were greater in earlier datetime
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 1,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2000, month => 1, day => 6,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 0,
+                             time_zone => 'UTC',
+                           );
+    my $dur = $dt2 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, 86399, 'seconds is 86399' );
+    is( $dur->delta_nanoseconds, 999_999_999, 'nanoseconds is 999,999,999' );
+    ok( $dur->is_positive, 'duration is positive' );
+}
+
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 20,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 10,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt2 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, 0, 'seconds is 0' );
+    is( $dur->delta_nanoseconds, -10, 'nanoseconds is -10' );
+    ok( $dur->is_negative, 'duration is negative' );
+}
+
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 11, second => 0,
+                             nanosecond => 20,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 10,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt2 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, -60, 'seconds is -60' );
+    is( $dur->delta_nanoseconds, -10, 'nanoseconds is -10' );
+    ok( $dur->is_negative, 'duration is negative' );
+}
+
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 20,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 11, second => 0,
+                             nanosecond => 10,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt2 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, 59, 'seconds is 59' );
+    is( $dur->delta_nanoseconds, 999_999_990, 'nanoseconds is 999,999,990' );
+    ok( $dur->is_positive, 'duration is positive' );
+}
+
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 11, second => 0,
+                             nanosecond => 10,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 10, second => 0,
+                             nanosecond => 20,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt2 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, -59, 'seconds is -59' );
+    is( $dur->delta_nanoseconds, -999_999_990, 'nanoseconds is -999,999,990' );
+    ok( $dur->is_negative, 'duration is negative' );
+}
+
+{
+    my $dt1 = DateTime->new( year => 2000, month => 1, day => 5,
+                             hour => 0, minute => 11, second => 0,
+                             nanosecond => 20,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt1 - $dt1;
+
+    is( $dur->delta_days, 0, 'days is 0' );
+    is( $dur->delta_seconds, 0, 'seconds is 0' );
+    is( $dur->delta_nanoseconds, 0, 'nanoseconds is 0' );
+    ok( ! $dur->is_positive, 'not positive' );
+    ok( ! $dur->is_negative, 'not negative' );
+}

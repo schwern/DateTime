@@ -32,7 +32,7 @@ sub new
 
     # if any component is negative we treat the whole duration as
     # negative
-    if ( grep { $p{$_} < 0 } qw( years months weeks days hours minutes seconds ) )
+    if ( grep { $p{$_} < 0 } qw( years months weeks days hours minutes seconds nanoseconds ) )
     {
         $self->{sign} = -1;
     }
@@ -44,12 +44,14 @@ sub new
     $self->{months} =
         ( abs( $p{years} * 12 ) + abs( $p{months} ) ) * $self->{sign};
 
-    $self->{days} =
-        ( abs( ( $p{weeks} * 7 ) ) + abs( $p{days} ) ) * $self->{sign};
+    # in Perl 5.6.1/Linux, $_=0; $_*-1 gives -0 !!! adding 0 fixes the result...
+
+    $self->{days} = 0 +
+        ( abs( $p{weeks} * 7 ) + abs( $p{days} ) ) * $self->{sign};
 
     $self->{minutes} = abs( ( $p{hours} * 60 ) + $p{minutes}  ) * $self->{sign};
 
-    $self->{seconds} = abs( $p{seconds} ) * $self->{sign};
+    $self->{seconds} = 0 + abs( $p{seconds} ) * $self->{sign};
 
     if ( $p{nanoseconds} )
     {
@@ -60,6 +62,11 @@ sub new
     {
         # shortcut - if they don't need nanoseconds
         $self->{nanoseconds} = 0;
+    }
+
+    unless ( grep { $self->{$_} } qw( months days minutes seconds nanoseconds ) )
+    {
+        $self->{sign} = 0;
     }
 
     return $self;
@@ -94,7 +101,8 @@ sub minutes { int( ( abs( $_[0]->{minutes} ) - ( $_[0]->hours * 60 ) ) ) }
 sub seconds { abs( $_[0]->{seconds} ) }
 sub nanoseconds { abs( $_[0]->{nanoseconds} ) }
 
-sub is_positive { $_[0]->{sign} == 1 ? 1 : 0 }
+sub is_positive { $_[0]->{sign} ==  1 ? 1 : 0 }
+sub is_zero     { $_[0]->{sign} ==  0 ? 1 : 0 }
 sub is_negative { $_[0]->{sign} == -1 ? 1 : 0 }
 
 sub delta_months  { $_[0]->{months} }
@@ -232,6 +240,7 @@ DateTime::Duration - Duration objects for date math
   $d->sign;
 
   if ( $d->is_positive ) { ... }
+  if ( $d->is_zero )     { ... }
   if ( $d->is_negative ) { ... }
 
   # The important parts for date math
@@ -327,9 +336,9 @@ Returns a hash with the keys "months", "days", "minutes", "seconds",
 and "nanoseconds", containing all the delta information for the
 object.
 
-=item * is_positive, is_negative
+=item * is_positive, is_zero, is_negative
 
-Indicates whether or not the duration is positive or negative.
+Indicates whether or not the duration is positive, zero, or negative.
 
 =item * is_wrap_mode, is_limit_mode, is_preserve_mode
 

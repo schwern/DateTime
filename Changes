@@ -1,3 +1,105 @@
+0.13     2003-05-05
+
+[ IMPROVEMENTS ]
+
+- DateTime now does more validation of parameters given to
+constructors and to the set() method, so bogus values like a month of
+13 are a fatal error.
+
+- Added a new constructor, from_day_of_year().
+
+- Added a number of new "get" methods, including era, year_with_era,
+hour_1, hour_12, hour_12_0, weekday_of_month, and week_of_month.
+Based in part on a patch from Rick Measham.
+
+- Now any object method can be called in strftime format by using
+"%{method}" as a format specifier.  Patch from Rick Measham
+
+- Added an is_zero method to DateTime::Duration, for objects of zero
+length.
+
+- DateTime->from_epoch will now accept a floating point epoch and turn
+the post-decimal portion into nanoseconds.  This was done in order to
+interface more accurately with Time::HiRes.
+
+- Added a DateTime->hires_epoch method that returns a floating point
+value for epoch, also for compatibility with Time::HiRes.
+
+- DateTime.pm now implements Storable hooks to reduce the size of
+serialized DateTime objects.  In particular, the contained time zone
+object is not serialized along with the DateTime object.  If you have
+serialized objects stored from earlier versions, there is a hack in
+the code that should load these properly as well.
+
+- It is not possible to create arbitrary DateTime::Language subclasses
+in any namespace.
+
+[ BUG FIXES ]
+
+- "Fixed" 20infinite.t failures on Windows with 2 icky hacks.  The
+first simply doesn't compile the XS code that deals with infinite
+numbers on Win32, so the pure Perl version is used instead.  However,
+the rest of the XS code is still compiled on Win32.  The other hack is
+to simply skip a failing test in 20infinite.t on Win32.  Hopefully,
+this will eventually be fixed but given that this is not core
+functionality for most users, I'd rather get this release out the door
+now.
+
+- Fix epoch() method to work properly with dates greater than 50 years
+ago.  Apparently, if Time::Local is given a year less than 100, it
+tries to guess the century, and it doesn't do this by simply adding
+1900.  Numbers less than 53 (for the year 2003) are treated as being
+in the current century.  Ugh.
+
+- Fixed compilation on HPUX.  Patch from Dan Sully.
+
+- The last_day_of_month() method did not accept a nanosecond
+parameter.
+
+- A DT::Duration object created with just nanoseconds was always
+positive, regardless of the value given for nanoseconds.
+
+- Fixed a serious bug when subtracting one datetime from another that
+could cause the result to be off by up to a second, and negative when
+it should be positive.  This was caused by the introduction of
+nanoseconds 0.10.
+
+- A zero length duration reported itself as positive when it should be
+neither positive nor negative.
+
+- In Perl 5.6.1/Red Hat Linux 7.2, multiplying a variable with value
+zero by -1 gives negative-zero, which breaks tests.
+
+   perl -e ' $x=0; $x*=-1; print $x '
+
+   -0
+
+Patch by Flavio Glock.
+
+- Comparing a DateTime::Infinite object to a regular datetime could
+cause a fatal error.  Reported by John Peacock.
+
+- Fixed a failure in the 04epoch.t tests on Win32.  Negative epoch
+values don't work on Win32.
+
+[ BACKWARDS INCOMPATIBILITIES ]
+
+- The "Portugese" language module has been renamed to "Portuguese".
+I'm so embarassed!  Reported by Richard Evans.
+
+- DateTime::Infinite objects no longer die if "set" methods are
+called.  Instead, these methods are now no-op methods that simply
+return the original object.  This makes these objects more usable when
+mixed with regular datetime objects.
+
+- Removed the fractional_second constructor parameter.  It was
+incorrectly documented anyway.  The fractional_second _accessor_ is
+still there.
+
+- DateTime::Duration objects of zero length no longer return true for
+is_positive.
+
+
 0.12     2003-05-05
 
 [ BUG FIXES ]
@@ -5,7 +107,7 @@
 - Make sure tests always run with warnings on.
 
 - Fix line that had "$] >= 5.6.0" to be "$] >= 5.006".  This caused
-warnings and was just wrong.  Reported by Rick Measham.
+warnings and was just wrong.  Reported by John Siracusa.
 
 - Quiet warnings from pure Perl implementation.
 
