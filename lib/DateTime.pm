@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1502';
+    $VERSION = '0.1503';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -1026,6 +1026,8 @@ sub add_duration
 
     my %deltas = $dur->deltas;
 
+    # This bit isn't quite right since DateTime::Infinite::Future -
+    # infinite duration should NaN
     foreach my $val ( values %deltas )
     {
         my $inf;
@@ -1046,6 +1048,8 @@ sub add_duration
             return $self;
         }
     }
+
+    return $self if $self->is_infinite;
 
     $self->{local_rd_days} += $deltas{days} if $deltas{days};
 
