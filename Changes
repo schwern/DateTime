@@ -1,4 +1,48 @@
-0.07
+0.08
+
+[IMPROVEMENTS]
+
+- All set/modify methods now return the datetime object, in order to
+make method chaining possible.  Patch by Iain Truskett.
+
+- The _greg2rd and _rd2greg methods have been renamed _ymd2rd and
+_rd2ymd, so as to make them look more normal when used in subclasses.
+
+- Added a truncate() method.  Suggested by Flavio Glock.
+
+- Added Swedish language module.  Contributed by Christian Hansen.
+
+- Added language modules for Afar, Amharic, Gedeo, Oromo, Sidama,
+Somali, and Tigrinya (Eritrean and Ethiopian), all courtesy of Daniel
+Yacob.
+
+- Various doc improvements, including a section on invalid local times.
+
+[BUG FIXES]
+
+- The week() method was wrong for many dates.  Reported by Christian
+Hansen.
+
+- The last_day_of_month() method had the DateTime class hard-coded in
+it.  Reported by Eugene van der Pijll.
+
+- Fixed a bug when comparing a datetime object to infinity (or
+negative infinity).  Fixed by Flavio Glock.
+
+- Date math has been fixed so that it affects the _local_ times.  This
+means that sometimes 1 day is not equal to 24 hours when the
+addition/subtraction crosses over a Daylight Saving Time change.  See
+the "How Date Math is Done" section of the docs for more details.
+
+[BACKWARDS INCOMPATIBILITIES]
+
+- Objects constructed via the new() method now have a "floating" time
+zone by default, instead of using the "local" time zone.  This is just
+simpler to deal with, and for code where time zones are unimportant,
+this is the most appropriate default.
+
+
+0.07     2003-02-26
 
 [IMPROVEMENTS]
 
@@ -15,7 +59,7 @@ different calendars that conform to the DateTime::Calendar interface.
 by Flavio S. Glock.
 
 - Added support for specifying a language by ISO code ("en" or
-"pt-br") as well as the subclass name.  Based on a patch from Erich
+"pt-br") as well as the subclass name.  Based on a patch from Eric
 Cholet.
 
 - Revamped the externally visible DateTime::Language API.

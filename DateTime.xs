@@ -48,6 +48,7 @@ _real_is_leap_year(IV y)
 {
   IV r = 0;
 
+  /* We need to have this first so that year 0 is a leap year */
   if (y % 400 == 0) {
     r = 1;
   } else if (y % 100 == 0) {
@@ -64,7 +65,7 @@ MODULE = DateTime       PACKAGE = DateTime
 PROTOTYPES: ENABLE
 
 void
-_rd2greg(self, d, extra = 0)
+_rd2ymd(self, d, extra = 0)
      SV* self;
      IV d;
      IV extra;
@@ -123,7 +124,7 @@ _rd2greg(self, d, extra = 0)
         }
 
 void
-_greg2rd(self, y, m, d)
+_ymd2rd(self, y, m, d)
      SV* self;
      IV y;
      IV m;

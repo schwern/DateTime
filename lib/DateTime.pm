@@ -4,7 +4,7 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 use DynaLoader;
 
@@ -20,9 +20,13 @@ use Time::Local ();
 
 # for some reason, overloading doesn't work unless fallback is listed
 # early.
+#
+# 3rd parameter ( $_[2] ) means the parameters are 'reversed'.
+# see: "Calling conventions for bynary operations" in overload docs.
+#
 use overload ( 'fallback' => 1,
-               '<=>' => 'compare',
-               'cmp' => 'compare',
+               '<=>' => '_compare_overload',
+               'cmp' => '_compare_overload',
                '-' => '_subtract_overload',
                '+' => '_add_overload',
              );
@@ -34,10 +38,12 @@ my( @MonthLengths, @LeapYearMonthLengths );
     # way to add the module-loading behavior to an accessor it
     # creates, despite what its docs say!
     my $DefaultLanguage;
-    sub DefaultLanguage {
+    sub DefaultLanguage
+    {
         my $class = shift;
 
-        if (@_) {
+        if (@_)
+        {
             my $lang = shift;
 
             DateTime::Language->load($lang);
@@ -50,7 +56,8 @@ my( @MonthLengths, @LeapYearMonthLengths );
 }
 __PACKAGE__->DefaultLanguage('English');
 
-sub new {
+sub new
+{
     my $class = shift;
     my %args = validate( @_,
                          { year   => { type => SCALAR },
@@ -62,7 +69,7 @@ sub new {
                            language  => { type => SCALAR | OBJECT,
                                           default => $class->DefaultLanguage },
                            time_zone => { type => SCALAR | OBJECT,
-                                          default => 'local' },
+                                          default => 'floating' },
                          }
                        );
 
@@ -84,7 +91,7 @@ sub new {
         );
 
     $self->{local_rd_days} =
-        $class->_greg2rd( @args{ qw( year month day ) } );
+        $class->_ymd2rd( @args{ qw( year month day ) } );
 
     $self->{local_rd_secs} =
         $class->_time_as_seconds( @args{ qw( hour minute second ) } );
@@ -97,12 +104,14 @@ sub new {
     return $self;
 }
 
-sub _calc_utc_rd {
+sub _calc_utc_rd
+{
     my $self = shift;
 
     delete $self->{utc_c};
 
-    if ( $self->{tz}->is_utc ) {
+    if ( $self->{tz}->is_utc )
+    {
         $self->{utc_rd_days} = $self->{local_rd_days};
         $self->{utc_rd_secs} = $self->{local_rd_secs};
 
@@ -116,17 +125,21 @@ sub _calc_utc_rd {
     _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
 }
 
-sub _calc_local_rd {
+sub _calc_local_rd
+{
     my $self = shift;
 
     delete $self->{local_c};
 
     # We must short circuit for UTC times or else we could end up with
     # loops between DateTime.pm and DateTime::TimeZone
-    if ( $self->{tz}->is_utc ) {
+    if ( $self->{tz}->is_utc )
+    {
         $self->{local_rd_days} = $self->{utc_rd_days};
         $self->{local_rd_secs} = $self->{utc_rd_secs};
-    } else {
+    }
+    else
+    {
         $self->{local_rd_days} = $self->{utc_rd_days};
         $self->{local_rd_secs} = $self->{utc_rd_secs} + $self->offset;
 
@@ -136,27 +149,30 @@ sub _calc_local_rd {
     $self->_calc_local_components;
 }
 
-sub _calc_local_components {
+sub _calc_local_components
+{
     my $self = shift;
 
     @{ $self->{local_c} }{ qw( year month day day_of_week day_of_year ) } =
-        $self->_rd2greg( $self->{local_rd_days}, 1 );
+        $self->_rd2ymd( $self->{local_rd_days}, 1 );
 
     @{ $self->{local_c} }{ qw( hour minute second ) } =
         $self->_seconds_as_components( $self->{local_rd_secs} );
 }
 
-sub _calc_utc_components {
+sub _calc_utc_components
+{
     my $self = shift;
 
     @{ $self->{utc_c} }{ qw( year month day ) } =
-        $self->_rd2greg( $self->{utc_rd_days} );
+        $self->_rd2ymd( $self->{utc_rd_days} );
 
     @{ $self->{utc_c} }{ qw( hour minute second ) } =
         $self->_seconds_as_components( $self->{utc_rd_secs} );
 }
 
-sub _utc_ymd {
+sub _utc_ymd
+{
     my $self = shift;
 
     $self->_calc_utc_components unless exists $self->{utc_c}{year};
@@ -164,7 +180,8 @@ sub _utc_ymd {
     return @{ $self->{utc_c} }{ qw( year month day ) };
 }
 
-sub _utc_hms {
+sub _utc_hms
+{
     my $self = shift;
 
     $self->_calc_utc_components unless exists $self->{utc_c}{hour};
@@ -172,7 +189,8 @@ sub _utc_hms {
     return @{ $self->{utc_c} }{ qw( hour minute second ) };
 }
 
-sub from_epoch {
+sub from_epoch
+{
     my $class = shift;
     my %args = validate( @_,
                          { epoch => { type => SCALAR },
@@ -188,14 +206,14 @@ sub from_epoch {
     $p{year} += 1900;
     $p{month}++;
 
-    # should tz be floating in some cases
     return $class->new( %args, %p, time_zone => 'UTC' );
 }
 
 # use scalar time in case someone's loaded Time::Piece
 sub now { shift->from_epoch( epoch => (scalar time), @_ ) }
 
-sub from_object {
+sub from_object
+{
     my $class = shift;
     my %args = validate( @_,
                          { object => { type => OBJECT,
@@ -210,7 +228,7 @@ sub from_object {
     my ( $rd_days, $rd_secs ) = $object->utc_rd_values;
 
     my %p;
-    @p{ qw( year month day ) } = $class->_rd2greg($rd_days);
+    @p{ qw( year month day ) } = $class->_rd2ymd($rd_days);
     @p{ qw( hour minute second ) } = $class->_seconds_as_components($rd_secs);
 
     my $new = $class->new( %p, %args, time_zone => 'UTC' );
@@ -221,7 +239,8 @@ sub from_object {
     return $new;
 }
 
-sub last_day_of_month {
+sub last_day_of_month
+{
     my $class = shift;
     my %p = validate( @_,
                       { year   => { type => SCALAR },
@@ -234,7 +253,7 @@ sub last_day_of_month {
                       }
                     );
 
-    my $day = ( DateTime->_is_leap_year( $p{year} ) ?
+    my $day = ( $class->_is_leap_year( $p{year} ) ?
                 $LeapYearMonthLengths[ $p{month} - 1 ] :
                 $MonthLengths[ $p{month} - 1 ]
               );
@@ -244,8 +263,8 @@ sub last_day_of_month {
 
 sub clone { bless { %{ $_[0] } }, ref $_[0] }
 
-BEGIN {
-
+BEGIN
+{
     @MonthLengths =
         ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 );
 
@@ -254,6 +273,7 @@ BEGIN {
 }
 
 sub year    { $_[0]->{local_c}{year} }
+
 sub ce_year { $_[0]->{local_c}{year} <= 0 ?
               $_[0]->{local_c}{year} - 1 :
               $_[0]->{local_c}{year} }
@@ -264,15 +284,9 @@ sub month   { $_[0]->{local_c}{month} }
 sub month_0 { $_[0]->{local_c}{month} - 1 };
 *mon_0 = \&month_0;
 
-sub month_name {
-    my $self = shift;
-    return $self->{language}->month_name($self);
-}
+sub month_name { $_[0]->{language}->month_name( $_[0] ) }
 
-sub month_abbr {
-    my $self = shift;
-    return $self->{language}->month_abbreviation($self);
-}
+sub month_abbr { $_[0]->{language}->month_abbreviation( $_[0] ) }
 
 sub day_of_month { $_[0]->{local_c}{day} }
 *day  = \&day_of_month;
@@ -290,15 +304,9 @@ sub day_of_week_0 { $_[0]->{local_c}{day_of_week} - 1 }
 *wday_0 = \&day_of_week_0;
 *dow_0  = \&day_of_week_0;
 
-sub day_name {
-    my $self = shift;
-    return $self->{language}->day_name($self);
-}
+sub day_name { $_[0]->{language}->day_name( $_[0] ) }
 
-sub day_abbr {
-    my $self = shift;
-    return $self->{language}->day_abbreviation($self);
-}
+sub day_abbr { $_[0]->{language}->day_abbreviation( $_[0] ) }
 
 sub day_of_year { $_[0]->{local_c}{day_of_year} }
 *doy = \&day_of_year;
@@ -306,9 +314,11 @@ sub day_of_year { $_[0]->{local_c}{day_of_year} }
 sub day_of_year_0 { $_[0]->{local_c}{day_of_year} - 1 }
 *doy_0 = \&day_of_year_0;
 
-sub ymd {
+sub ymd
+{
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
+
     return sprintf( "%0.4d%s%0.2d%s%0.2d",
                     $self->year, $sep,
                     $self->{local_c}{month}, $sep,
@@ -316,18 +326,22 @@ sub ymd {
 }
 *date = \&ymd;
 
-sub mdy {
+sub mdy
+{
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
+
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
                     $self->{local_c}{month}, $sep,
                     $self->{local_c}{day}, $sep,
                     $self->year );
 }
 
-sub dmy {
+sub dmy
+{
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
+
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
                     $self->{local_c}{day}, $sep,
                     $self->{local_c}{month}, $sep,
@@ -342,9 +356,11 @@ sub minute { $_[0]->{local_c}{minute} }
 sub second { $_[0]->{local_c}{second} }
 *sec = \&second;
 
-sub hms {
+sub hms
+{
     my ( $self, $sep ) = @_;
     $sep = ':' unless defined $sep;
+
     return sprintf( "%0.2d%s%0.2d%s%0.2d",
                     $self->{local_c}{hour}, $sep,
                     $self->{local_c}{minute}, $sep,
@@ -353,11 +369,7 @@ sub hms {
 # don't want to override CORE::time()
 *DateTime::time = \&hms;
 
-sub iso8601 {
-    my $self = shift;
-
-    return join 'T', $self->ymd, $self->hms(':');
-}
+sub iso8601 { join 'T', $_[0]->ymd('-'), $_[0]->hms(':') }
 *datetime = \&iso8601;
 
 sub is_leap_year { $_[0]->_is_leap_year( $_[0]->year ) }
@@ -368,18 +380,47 @@ sub week
 
     unless ( defined $self->{local_c}{week_year} )
     {
-        my $mid_week = $self->clone;
-        # Thursday if Sunday is the first day of the week
-        $mid_week->add( days => 4 - ( ( $self->{local_rd_days} % 7 ) + 1 ) );
-        $self->{local_c}{week_year} = $mid_week->year;
+        # This algorithm was taken from Date::Calc's DateCalc.c file
+        my $jan_one_dow_m1 =
+            ( ( $self->_ymd2rd( $self->year, 1, 1 ) + 6 ) % 7 );
 
-        my $jan_four = $self->_greg2rd( $self->{local_c}{week_year}, 1, 4 );
-        my $first_week = $jan_four - ( $jan_four % 7 );
         $self->{local_c}{week_number} =
-            int( ( $self->{local_rd_days} - $first_week ) / 7 ) + 1;
+            int( ( ( $self->day_of_year - 1 ) + $jan_one_dow_m1 ) / 7 );
+        $self->{local_c}{week_number}++ if $jan_one_dow_m1 < 4;
+
+        if ( $self->{local_c}{week_number} == 0 )
+        {
+            $self->{local_c}{week_year} = $self->year - 1;
+            $self->{local_c}{week_number} =
+                $self->_weeks_in_year( $self->{local_c}{week_year} );
+        }
+        elsif ( $self->{local_c}{week_number} == 53 &&
+                $self->_weeks_in_year( $self->year ) == 52 )
+        {
+            $self->{local_c}{week_number} = 1;
+            $self->{local_c}{week_year} = $self->year + 1;
+        }
+        else
+        {
+            $self->{local_c}{week_year} = $self->year;
+        }
     }
 
     return @{ $self->{local_c} }{ 'week_year', 'week_number' }
+}
+
+# Also from DateCalc.c
+sub _weeks_in_year
+{
+    my $self = shift;
+    my $year = shift;
+
+    my $jan_one_dow =
+        ( ( $self->_ymd2rd( $year, 1, 1 ) + 6 ) % 7 ) + 1;
+    my $dec_31_dow =
+        ( ( $self->_ymd2rd( $year, 12, 31 ) + 6 ) % 7 ) + 1;
+
+    return $jan_one_dow == 4 || $dec_31_dow == 4 ? 53 : 52;
 }
 
 sub week_year   { ($_[0]->week)[0] }
@@ -402,7 +443,8 @@ sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * 86400 )   + $_[0]->{utc_rd_se
 sub local_rd_as_seconds { ( $_[0]->{local_rd_days} * 86400 ) + $_[0]->{local_rd_secs} }
 
 # RD 1 is JD 1,721,424.5 - a simple offset
-sub jd {
+sub jd
+{
     my $self = shift;
 
     my $jd = $self->{utc_rd_days} + 1_721_424.5;
@@ -410,7 +452,7 @@ sub jd {
     return $jd + ( $self->{utc_rd_secs} / 86400 );
 }
 
-sub mjd { $_[0]->jd - + 2_400_000.5 }
+sub mjd { $_[0]->jd - 2_400_000.5 }
 
 my %formats =
     ( 'a' => sub { $_[0]->day_abbr },
@@ -466,7 +508,8 @@ my %formats =
 
 $formats{h} = $formats{b};
 
-sub strftime {
+sub strftime
+{
     my $self = shift;
     # make a copy or caller's scalars get munged
     my @formats = @_;
@@ -489,7 +532,8 @@ sub strftime {
     return @r;
 }
 
-sub epoch {
+sub epoch
+{
     my $self = shift;
 
     return $self->{utc_c}{epoch}
@@ -511,13 +555,14 @@ sub epoch {
 # added for benefit of DateTime::TimeZone
 sub utc_year { ($_[0]->_utc_ymd)[0] }
 
-sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
+sub add { return shift->add_duration( DateTime::Duration->new(@_) ) }
 
-sub subtract { shift->subtract_duration( DateTime::Duration->new(@_) ) }
+sub subtract { return shift->subtract_duration( DateTime::Duration->new(@_) ) }
 
-sub subtract_duration { $_[0]->add_duration( $_[1]->inverse ) }
+sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 
-sub subtract_datetime {
+sub subtract_datetime
+{
     my $self = shift;
     my $dt = shift;
 
@@ -562,10 +607,12 @@ sub subtract_datetime {
     }
 }
 
-sub _add_overload {
+sub _add_overload
+{
     my ( $dt, $dur, $reversed ) = @_;
 
-    if ($reversed) {
+    if ($reversed)
+    {
         ( $dur, $dt ) = ( $dt, $dur );
     }
 
@@ -576,37 +623,46 @@ sub _add_overload {
     return $new;
 }
 
-sub _subtract_overload {
+sub _subtract_overload
+{
     my ( $date1, $date2, $reversed ) = @_;
 
-    if ($reversed) {
+    if ($reversed)
+    {
         ( $date2, $date1 ) = ( $date1, $date2 );
     }
 
-    if ( UNIVERSAL::isa( $date2, 'DateTime::Duration' ) ) {
+    if ( UNIVERSAL::isa( $date2, 'DateTime::Duration' ) )
+    {
         my $new = $date1->clone;
         $new->add_duration( $date2->inverse );
         return $new;
-    } else {
+    }
+    else
+    {
         return $date1->subtract_datetime($date2);
     }
     # handle other cases?
 }
 
-sub add_duration {
+sub add_duration
+{
     my ( $self, $dur ) = @_;
-
-    delete $self->{utc_c};
 
     my %deltas = $dur->deltas;
 
-    $self->{utc_rd_days} += $deltas{days} if $deltas{days};
-
+    # We add seconds to the UTC time because if someone adds 24 hours,
+    # we want this to be _different_ from adding 1 day when crossing
+    # DST boundaries.
     if ( $deltas{seconds} )
     {
         $self->{utc_rd_secs} += $deltas{seconds};
         _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+
+        $self->_calc_local_rd;
     }
+
+    $self->{local_rd_days} += $deltas{days} if $deltas{days};
 
     if ( $deltas{months} )
     {
@@ -614,36 +670,50 @@ sub add_duration {
         # it the 0th day of the following month (which then will
         # normalize back to the last day of the new month).
         my ($y, $m, $d) = ( $dur->is_preserve_mode ?
-                            $self->_rd2greg( $self->{utc_rd_days} + 1 ) :
-                            $self->_rd2greg( $self->{utc_rd_days} )
+                            $self->_rd2ymd( $self->{local_rd_days} + 1 ) :
+                            $self->_rd2ymd( $self->{local_rd_days} )
                           );
         $d -= 1 if $dur->is_preserve_mode;
 
         if ( ! $dur->is_wrap_mode && $d > 28 )
         {
             # find the rd for the last day of our target month
-            $self->{utc_rd_days} = $self->_greg2rd( $y, $m + $deltas{months} + 1, 0 );
+            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months} + 1, 0 );
 
             # what day of the month is it? (discard year and month)
-            my $last_day = ($self->_rd2greg( $self->{utc_rd_days} ))[2];
+            my $last_day = ($self->_rd2ymd( $self->{local_rd_days} ))[2];
 
             # if our original day was less than the last day,
             # use that instead
-            $self->{utc_rd_days} -= $last_day - $d if $last_day > $d;
+            $self->{local_rd_days} -= $last_day - $d if $last_day > $d;
         }
         else
         {
-            $self->{utc_rd_days} = $self->_greg2rd( $y, $m + $deltas{months}, $d );
+            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
         }
     }
 
-    $self->_calc_local_rd;
+    if ( $deltas{days} || $deltas{months} )
+    {
+        $self->_calc_utc_rd;
+        $self->_calc_local_rd;
+    }
+
+    return $self;
 }
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
-sub compare {
+sub _compare_overload
+{
+    # note: $_[1]->compare( $_[0] ) is an error when $_[1] is not a
+    # DateTime (such as the INFINITY value)
+    return $_[2] ? - $_[0]->compare( $_[1] ) : $_[0]->compare( $_[1] );
+}
+
+sub compare
+{
     my ( $class, $dt1, $dt2 ) = ref $_[0] ? ( undef, @_ ) : @_;
 
     return undef unless defined $dt2;
@@ -663,7 +733,8 @@ sub compare {
     return $secs1 <=> $secs2;
 }
 
-sub set {
+sub set
+{
     my $self = shift;
     my %p = validate( @_,
                       { year     => { type => SCALAR, optional => 1 },
@@ -683,9 +754,39 @@ sub set {
     my $new_dt = (ref $self)->new( %old_p, %p );
 
     %$self = %$new_dt;
+
+    return $self;
 }
 
-sub set_time_zone {
+sub truncate
+{
+    my $self = shift;
+    my %p = validate( @_,
+                      { to =>
+                        { regex => qr/^(?:year|month|day|hour|minute)$/ },
+                      },
+                    );
+
+    my %new = ( language  => $self->{language},
+                time_zone => $self->{tz},
+              );
+
+    foreach my $f ( qw( year month day hour minute ) )
+    {
+        $new{$f} = $self->$f();
+
+        last if $p{to} eq $f;
+    }
+
+    my $new_dt = (ref $self)->new(%new);
+
+    %$self = %$new_dt;
+
+    return $self;
+}
+
+sub set_time_zone
+{
     my ( $self, $tz ) = @_;
 
     my $was_floating = $self->{tz}->is_floating;
@@ -700,6 +801,8 @@ sub set_time_zone {
     {
         $self->_calc_local_rd;
     }
+
+    return $self;
 }
 
 
@@ -788,30 +891,37 @@ DateTime - Reference implementation for Perl DateTime objects
 
 =head1 DESCRIPTION
 
-DateTime is the reference implementation for the base DateTime object
-API.  For details on the Perl DateTime Suite project please see
-L<http://perl-date-time.sf.net>.
+DateTime is a class for the representation of date/time combinations,
+and is part of the Perl DateTime project.  For details on this project
+please see L<http://perl-date-time.sf.net/>.
 
 It represents the Gregorian calendar, extended backwards in time
-before its creation (in 1582).  This is sometimes know as the
-"proleptic Gregorian calendar".  In this calendar, its epoch (or
-beginning), is the first day of year 1, which corresponds to the date
-which was (incorrectly) believed to be the birth of Jesus.
+before its creation (in 1582).  This is sometimes known as the
+"proleptic Gregorian calendar".  In this calendar, the first day of
+the calendar (the epoch), is the first day of year 1, which
+corresponds to the date which was (incorrectly) believed to be the
+birth of Jesus Christ.
 
 The calendar represented does have a year 0, and in that way differs
 from how dates are often written using "BCE/CE" or "BC/AD".
 
 =head1 LANGUAGES
 
-Some methods are localizable by setting a language for a DateTime
-object.  There is also a C<DefaultLanguage()> class method which may
-be used to set the default language for all DateTime objects created.
+Some methods are localizable by setting a language when constructing a
+DateTime object.  There is also a C<DefaultLanguage()> class method
+which may be used to set the default language for all DateTime objects
+created.
 
 If there is neither a class default or language constructor parameter,
 then the "default default" language is English.
 
 Additional language subclasses are welcome.  See the Perl DateTime
-Suite project page at http://perl-date-time.sf.net/ for more details.
+project page at http://perl-date-time.sf.net/ for more details.
+
+Some languages may return names as Unicode.  When using Perl 5.6.0 or
+greater, this will be a native Perl Unicode string.  When using older
+Perls, this will be a sequence of bytes representing the Unicode
+character.
 
 =head1 ERROR HANDLING
 
@@ -830,7 +940,7 @@ All constructors can die when invalid parameters are given.
 
 =item * new( ... )
 
-This class method accepts parameters for each date and time component,
+This class method accepts parameters for each date and time component:
 "year", "month", "day", "hour", "minute", "second".  Additionally, it
 accepts "language" and "time_zone" parameters.
 
@@ -854,8 +964,9 @@ All of the parameters are optional except for "year".  The "month" and
 "day" parameters both default to 1, while the "hour", "minute", and
 "second" parameters all default to 0.
 
-The language parameter should be a strict matching one of the valid
-languages L<previously listed|/LANGUAGES>.
+The language parameter should be a string matching one of the valid
+languages.  See the L<DateTime::Language|DateTime::Language>
+documentation for details.
 
 The time_zone parameter can be either a scalar or a
 C<DateTime::TimeZone> object.  A string will simply be passed to the
@@ -864,12 +975,14 @@ string may be an Olson DB time zone name ("America/Chicago"), an
 offset string ("+0630"), or the words "floating" or "local".  See the
 C<DateTime::TimeZone> documentation for more details.
 
+The default time zone is "floating".
+
 =head3 Ambiguous Local Times
 
 Because of Daylight Saving Time, it is possible to specify a local
 time that is ambiguous.  For example, in the US in 2003, the
-transition from to saving to standard time will occur on October 26,
-at 02:00:00 local time.  The local clock changes from 01:59:59 (saving
+transition from to saving to standard time occurs on October 26, at
+02:00:00 local time.  The local clock changes from 01:59:59 (saving
 time) to 01:00:00 (standard time).  This means that the hour from
 01:00:00 through 01:59:59 actually occurs twice, though the UTC time
 continues to move forward.
@@ -881,8 +994,8 @@ for example:
 
   # This object represent 01:30:00 saving time
   my $dt = DateTime->new( year   => 2003,
-                          month  => 4,
-                          day    => 6,
+                          month  => 10,
+                          day    => 26,
                           hour   => 1,
                           minute => 30,
                           second => 0,
@@ -899,6 +1012,18 @@ for example:
 Alternately, you could create the object with the UTC time zone, and
 then call the C<set_time_zone()> method to change the time zone.  This
 would allow you to unambiguously specify the datetime.
+
+=head3 Invalid Local Times
+
+Another problem introduced by Daylight Saving Time is that certain
+local times just do not exist.  For example, in the US in 2003, the
+transition from standard to saving time occurs on April 6, at the
+change to 2:00:00 local time.  The local clock changes from 01:59:59
+(standard time) to 03:00:00 (saving time).  This means that there is
+no 02:00:00 through 02:59:59 on April 6!
+
+Attempting to create an invalid time currently causes a fatal error.
+This may change in future version of this module.
 
 =item * from_epoch( epoch => $epoch, ... )
 
@@ -944,16 +1069,19 @@ This object method returns a replica of the given object.
 The DateTime.pm module follows a simple consistent logic for
 determining whether or not a given number is 0-based or 1-based.
 
-All I<date>-related numbers such as year, month, day of
-month/week/year, are 1-based.  Any method that is one based also has
-an equivalent 0-based method ending in "_0".  So for example, this
-class provides both C<day_of_week()> and C<day_of_week_0()> methods.
+Month, day of month, day of week, and day of year are 1-based.  Any
+method that is 1-based also has an equivalent 0-based method ending in
+"_0".  So for example, this class provides both C<day_of_week()> and
+C<day_of_week_0()> methods.
 
 The C<day_of_week_0> method still treats Monday as the first day of
 the week.
 
 All I<time>-related numbers such as hour, minute, and second are
 0-based.
+
+Years are neither, as they can be both positive or negative, unlike
+any other datetime component.  There I<is> a year 0.
 
 =head2 Methods
 
@@ -964,12 +1092,12 @@ about an object.
 
 =item * year
 
-Returns the year.  The year before year 1 is year 0.
+Returns the year.
 
 =item * ce_year
 
-Returns the year according to the BCE/CE system.  The year before year
-1 is year -1, aka "1 BCE".
+Returns the year according to the BCE/CE numbering system.  The year
+before year 1 in this system is year -1, aka "1 BCE".
 
 =item * month
 
@@ -1078,7 +1206,7 @@ Returns the week of the year, from 1..53.
 =item * jd, mjd
 
 These return the Julian Day and Modified Julian Day, respectively.
-The value returned is a floating point number, the fractional portion
+The value returned is a floating point number.  The fractional portion
 of the number represents the time portion of the datetime.
 
 =item * time_zone
@@ -1123,25 +1251,36 @@ This method implements functionality similar to the C<strftime()>
 method in C.  However, if given multiple format strings, then it will
 return multiple elements, one for each format string.
 
-See the L<strftime Specifiers|/strftime Specifiers> section for a list of
-all possible format specifiers.
+See the L<strftime Specifiers|/strftime Specifiers> section for a list
+of all possible format specifiers.
 
 =item * epoch
 
-Return the epoch value for the datetime object.  Internally, this is
-implemented using C<Time::Local>, which uses the Unix epoch even on
+Return the UTC epoch value for the datetime object.  Internally, this
+is implemented using C<Time::Local>, which uses the Unix epoch even on
 machines with a different epoch (such as MacOS).  Datetimes before the
 start of the epoch will be returned as a negative number.
 
 Since epoch times cannot represent many dates on most platforms, this
 method may simply return undef in some cases.
 
-Using your system's epoch time is not recommended, since they have
-such a limited range, at least on 32-bit machines.
+Using your system's epoch time may be error-prone, since epoch times
+have such a limited range on 32-bit machines.  Additionally, the fact
+that different operating systems have different epoch beginnings is
+another source of bugs.
 
 =back
 
-Other methods provided by C<DateTime.pm> are:
+The remaining methods provided by C<DateTime.pm>, except where otherwise
+specified, return the object itself, thus making method chaining
+possible. For example:
+
+  my $dt = DateTime->now->set_time_zone( 'Australia/Sydney' );
+
+  my $first = DateTime
+		->last_day_of_month( year => 2003, month => 3 )
+		->add( days => 1 )
+                ->subtract( seconds => 1 );
 
 =over 4
 
@@ -1151,6 +1290,15 @@ This method can be used to change the local components of a date time,
 or its language.  This method accepts any parameter allowed by the
 C<new()> method except for "time_zone".  Time zones may be set using
 the C<set_time_zone()> method.
+
+=item * truncate( to => ... )
+
+This method allows you to reset some of the local time components in
+the object to their "zero" values.  The "to" parameter is used to
+specify which values to truncate, and it may be one of "year",
+"month", "day", "hour", or "minute".  For example, if "month" is
+specified, then the local day becomes 1, and the hour, minute, and
+second all become 0.
 
 =item * set_time_zone( $tz )
 
@@ -1217,8 +1365,9 @@ the difference between the two dates.
 
   @dates = sort { DateTime->compare($a, $b) } @dates;
 
-Compare two DateTime objects. Semantics are compatible with sort;
-returns -1 if $a < $b, 0 if $a == $b, 1 if $a > $b.
+Compare two DateTime objects.  The semantics are compatible with
+Perl's C<sort()> function; it returns -1 if $a < $b, 0 if $a == $b, 1
+if $a > $b.
 
 Of course, since DateTime objects overload comparison operators, you
 can just do this anyway:
@@ -1235,8 +1384,8 @@ C<DateTime::Duration>.
 
 The parts of a duration can be broken into three parts.  These are
 months, days, and seconds.  Adding one month to a date is different
-than adding 4 weeks or 28, 30, or 31 days.  Similarly, due to DST and
-leap seconds, adding a day can be different than adding 86,400
+than adding 4 weeks or 28, 29, 30, or 31 days.  Similarly, due to DST
+and leap seconds, adding a day can be different than adding 86,400
 seconds.
 
 C<DateTime.pm> always adds (or subtracts) days and seconds first.
@@ -1246,10 +1395,54 @@ greater than 86,400 (or 86,401).  Then it adds months.
 This means that adding one month and one day to February 28, 2003 will
 produce the date April 1, 2003, not March 29, 2003.
 
+=head3 Local vs. UTC and 24 hours vs. 1 day
+
+When doing date math, you are changing the I<local> datetime.  This is
+generally the same as changing the UTC datetime, except when a change
+crosses a daylight saving boundary.  The net effect of this is that 24
+hours is not always the same as 1 day.
+
+Specifically, if you do this:
+
+  my $dt = DateTime->new( year => 2003, month => 4, day => 5,
+                          hour => 2,
+                          time_zone => 'America/Chicago',
+                        );
+  $dt->add( days => 1 );
+
+then you will produce an I<invalid> local time, and therefore an
+exception will be thrown.
+
+However, this works:
+
+  my $dt = DateTime->new( year => 2003, month => 4, day => 5,
+                          hour => 2,
+                          time_zone => 'America/Chicago',
+                        );
+  $dt->add( hours => 24 );
+
+and produces a datetime with the local time of "03:00".
+
+Another way of thinking of this is that when doing date math, each of
+the seconds, days, and months components is added separately to the
+local time.
+
+So when we add 1 day to "2003-02-22 12:00:00" we are incrementing day
+component, 22, by one in order to produce 23.  If we add 24 hours,
+however, we're adding "24 * 60 * 60" seconds to the time component,
+and then normalizing the result (because there is no "36:00:00").
+
+If all this makes your head hurt, there is a simple alternative.  Just
+convert your datetime object to the "UTC" time zone before doing date
+math on it, and switch it back to the local time zone afterwards.
+This avoids the possibility of having date math throw an exception,
+and makes sure that 1 day equals 24 hours.  Of course, this may not
+always be desirable, so caveat user!
+
 =head2 Overloading
 
 This module explicitly overloads the addition (+), subtraction (-),
-string and numberic comparison operators.  This means that the
+string and numeric comparison operators.  This means that the
 following all do sensible things:
 
   my $new_dt = $dt + $duration_obj;
@@ -1266,7 +1459,8 @@ increment (++) or decrement (--) to do anything useful.
 
 =head2 strftime Specifiers
 
-The following specifiers are allowed in the format string:
+The following specifiers are allowed in the format string given to the
+C<strftime()> method:
 
 =over 4
 
