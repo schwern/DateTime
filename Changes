@@ -1,0 +1,209 @@
+0.10     2003-04-19 (the "I'm sure the new regime will be spiffy" release)
+
+[IMPROVEMENTS]
+
+- Added Tigre language module.  Contributed by Daniel Yacob.
+
+- DateTime::Duration objects now overload multiplication.  Implemented
+by Flavio Glock.
+
+- Added support for nanoseconds in DateTime.pm and DateTime::Duration.
+Implemented by Flavio Glock.
+
+- Added complete support for leap seconds (through use of
+DateTime::LeapSecond).  Mostly implemented by Flavio Glock.
+
+[ BACKWARDS INCOMPATIBILTIES ]
+
+- Because of the addition of leap seconds to the mix, we are now
+forced to handle seconds separately from minutes when doing date math.
+This means that several aspects of the DateTime::Duration API have
+changed.  Specifically:
+
+-- There is now an additional delta_minutes() method.
+-- The hash returned by the deltas() method now includes a "minutes" key.
+-- The seconds delta may be greater than 59.
+-- The seconds() method may return a number greater than 59.
+
+
+0.09     2003-04-05 (the "liberation through violence" release)
+
+[IMPROVEMENTS]
+
+- As requested by numerous people, there is now a pure Perl
+implementation of DateTime.pm included with this distribution.  If you
+don't have a C compiler it will be used instead of the XS
+implementation.
+
+- Document how floating time zones are handling in comparisons, and
+add the compare_ignore_floating method.  Based on a patch from Eugene
+van der Pijll.
+
+- Allow from_epoch(), now(), and today() to accept a time_zone
+parameter.  Based on suggestions from Tim Bunce and Joshua Hoblitt.
+
+- Allow extraction of AM/PM string list from DateTime::Language classes.
+
+- Added quarter() and day_of_quarter() methods.  Based on a patch from
+Tim Allwine.
+
+[BUG FIXES]
+
+- If a datetime had the floating timezone and then set_time_zone was
+used to set it to something else, the internal UTC time of the object
+was not changed, meaning that its offset could be calculated
+incorrectly.  Patch by Eugene van der Pijll.
+
+- If datetime math was done with hours, minutes, or seconds, the
+return value of ->epoch would be wrong after this.  Based on report
+and patch from Iain Truskett.
+
+
+0.08     2003-03-21 (the "anti-war" release)
+
+[IMPROVEMENTS]
+
+- All set/modify methods now return the datetime object, in order to
+make method chaining possible.  Patch by Iain Truskett.
+
+- The _greg2rd and _rd2greg methods have been renamed _ymd2rd and
+_rd2ymd, so as to make them look more normal when used in subclasses.
+
+- Added a truncate() method.  Suggested by Flavio Glock.
+
+- Added Swedish language module.  Contributed by Christian Hansen.
+
+- Added language modules for Afar, Amharic, Gedeo, Oromo, Sidama,
+Somali, and Tigrinya (Eritrean and Ethiopian), all courtesy of Daniel
+Yacob.
+
+- Various doc improvements, including a section on invalid local times.
+
+[BUG FIXES]
+
+- The week() method was wrong for many dates.  Reported by Christian
+Hansen.
+
+- The last_day_of_month() method had the DateTime class hard-coded in
+it.  Reported by Eugene van der Pijll.
+
+- Fixed a bug when comparing a datetime object to infinity (or
+negative infinity).  Fixed by Flavio Glock.
+
+- Date math has been fixed so that it affects the _local_ times.  This
+means that sometimes 1 day is not equal to 24 hours when the
+addition/subtraction crosses over a Daylight Saving Time change.  See
+the "How Date Math is Done" section of the docs for more details.
+
+[BACKWARDS INCOMPATIBILITIES]
+
+- Objects constructed via the new() method now have a "floating" time
+zone by default, instead of using the "local" time zone.  This is just
+simpler to deal with, and for code where time zones are unimportant,
+this is the most appropriate default.
+
+
+0.07     2003-02-26
+
+[IMPROVEMENTS]
+
+- Added a small hack to the compare() method so that this module can
+be used with Set::Infinite.
+
+- Changed compare so that it can be used to compare two objects from
+different calendars that conform to the DateTime::Calendar interface.
+
+- Added explanation of exactly what calendar this module represents
+("proleptic Gregorian calendar") to docs.
+
+- Added a Spanish language DateTime::Language subclass.  Implemented
+by Flavio S. Glock.
+
+- Added support for specifying a language by ISO code ("en" or
+"pt-br") as well as the subclass name.  Based on a patch from Eric
+Cholet.
+
+- Revamped the externally visible DateTime::Language API.
+
+- Objects created via the from_object() method are set to the time
+zone of the object from which they were created, if it has one, or UTC
+otherwise.
+
+[BUG FIXES]
+
+- The from_object() method was broken because it retrieved a UTC
+datetime from the object passed in, and then created a new DateTime
+object using that UTC time as a _local_ time.
+
+[BACKWARDS INCOMPATIBILITIES]
+
+- Removed stringification overloading.  Having this in place made it
+impossible to create a strack trace in much of the time zone code.
+
+- Renamed the DateTime::Language->subclasses method as languages.
+
+- It is no longer possible to directly instantiate a
+DateTime::Language subclass, instead use:
+
+  my $en = DateTime::Language->new( language => 'English' );
+
+- The from_object() method no longer accepts a "time_zone" parameter.
+
+
+0.06     2003-02-16
+
+- The docs said that there was no year 0 in the Gregorian calendar,
+but that was wrong.  The year() method can now return 0.  The year_0()
+method has been removed.
+
+- Added jd() and mjd() methods.
+
+- Re-implemented some of the core code in XS for speed.
+
+0.05     2003-02-13
+
+- Fix handling and reporting of epoch times.  Epoch times are, by
+definition, UTC times, so any time created from an epoch should always
+have its time zone set to "UTC".  This can be changed after the object
+is created.  Similarly, value returned by the epoch() method needs to
+be based on the object's UTC time, not it's local time.  Bug reported
+by Kellan Elliott-McCrea.
+
+- Change year_0 so that -1 BCE is 0, not 1 CE.  This corresponds to
+astronomical years.
+
+- Change ymd, dmy, mdy, and iso8601 to use Gregorian years (..., -2,
+-1, 1, 2, ... ) as opposed to astronomical years.  Also make sure all
+negative years are formatted as 4 digits.
+
+0.04     2003-02-10
+
+- Explicitly set time zone for objects created during tests.
+
+0.03     2003-02-09
+
+- Giving a language parameter to a constructor method didn't load the
+language class.
+
+- Test that all language classes are at least loadable.
+
+- Added Brazilian (not quite a language ;) and Danish, again stolen
+from Graham Barr's TimeDate suite.
+
+- Added is_dst method.  Requested by Matt Sergeant.
+
+0.02     2003-02-09
+
+- Fixed a bug in calculating day of year in leap years (it was +1 off
+starting in February).  Reported by Matt Sergeant.
+
+- Subtracting one datetime from another was broken in most cases.
+Improved the tests for this quite a bit.  Reported by Eric Cholet.
+
+- Made the version number a non-dev-release so it's visible when
+CPAN.pm tries to install it as a prereq for something else.
+
+0.01_00  2003-02-04
+
+- The first alpha release.  This module draws on Date::ICal for much
+of its internals, so it has more history than a normal alpha release.
