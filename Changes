@@ -1,3 +1,23 @@
+0.05     2003-02-13
+
+- Fix handling and reporting of epoch times.  Epoch times are, by
+definition, UTC times, so any time created from an epoch should always
+have its time zone set to "UTC".  This can be changed after the object
+is created.  Similarly, value returned by the epoch() method needs to
+be based on the object's UTC time, not it's local time.  Bug reported
+by Kellan.
+
+- Change year_0 so that -1 BCE is 0, not 1 CE.  This corresponds to
+astronomical years.
+
+- Change ymd, dmy, mdy, and iso8601 to use Gregorian years (..., -2,
+-1, 1, 2, ... ) as opposed to astronomical years.  Also make sure all
+negative years are formatted as 4 digits.
+
+0.04     2003-02-10
+
+- Explicitly set time zone for objects created during tests.
+
 0.03     2003-02-09
 
 - Giving a language parameter to a constructor method didn't load the

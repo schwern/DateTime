@@ -4,7 +4,7 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.03';
+$VERSION = '0.05';
 
 use Date::Leapyear ();
 use DateTime::Duration;
@@ -80,8 +80,6 @@ sub new {
         die $@ if $@;
         $self->{language} = $lang_class->new;
     }
-
-    $args{time_zone} = 'local' unless exists $args{time_zone};
 
     $self->{tz} =
         ( ref $args{time_zone} ?
@@ -170,7 +168,6 @@ sub from_epoch {
     my %args = validate( @_,
                          { epoch => { type => SCALAR },
                            language  => { type => SCALAR | OBJECT, optional => 1 },
-                           time_zone => { type => SCALAR | OBJECT, optional => 1 },
                          }
                        );
 
@@ -183,7 +180,7 @@ sub from_epoch {
     $p{month}++;
 
     # pass other args like time_zone to constructor
-    return $class->new( %args, %p );
+    return $class->new( %args, %p, time_zone => 'UTC' );
 }
 
 # use scalar time in case someone's loaded Time::Piece
@@ -384,7 +381,7 @@ sub _beginning_of_month_day_of_year {
 }
 
 sub year    { $_[0]->{c}{year} <= 0 ? $_[0]->{c}{year} - 1 : $_[0]->{c}{year} }
-sub year_0  { $_[0]->{c}{year} - 1 }
+sub year_0  { $_[0]->{c}{year} }
 
 sub month   { $_[0]->{c}{month} }
 *mon = \&month;
@@ -437,8 +434,8 @@ sub day_of_year_0 { $_[0]->{c}{day_of_year} - 1 }
 sub ymd {
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
-    return sprintf( "%04d%s%02d%s%02d",
-                    $self->{c}{year}, $sep,
+    return sprintf( "%0.4d%s%0.2d%s%0.2d",
+                    $self->year, $sep,
                     $self->{c}{month}, $sep,
                     $self->{c}{day} );
 }
@@ -447,19 +444,19 @@ sub ymd {
 sub mdy {
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
-    return sprintf( "%02d%s%02d%s%04d",
+    return sprintf( "%0.2d%s%0.2d%s%0.4d",
                     $self->{c}{month}, $sep,
                     $self->{c}{day}, $sep,
-                    $self->{c}{year} );
+                    $self->year );
 }
 
 sub dmy {
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
-    return sprintf( "%02d%s%02d%s%04d",
+    return sprintf( "%0.2d%s%0.2d%s%0.4d",
                     $self->{c}{day}, $sep,
                     $self->{c}{month}, $sep,
-                    $self->{c}{year} );
+                    $self->year );
 }
 
 sub hour   { $_[0]->{c}{hour} }
@@ -473,7 +470,7 @@ sub second { $_[0]->{c}{second} }
 sub hms {
     my ( $self, $sep ) = @_;
     $sep = ':' unless defined $sep;
-    return sprintf( "%02d%s%02d%s%02d",
+    return sprintf( "%0.2d%s%0.2d%s%0.2d",
                     $self->{c}{hour}, $sep,
                     $self->{c}{minute}, $sep,
                     $self->{c}{second} );
@@ -483,7 +480,12 @@ sub hms {
 
 sub iso8601 {
     my $self = shift;
-    return join 'T', $self->ymd('-'), $self->hms(':');
+
+    # ISO 8601 uses astronomical years
+    my $ymd = sprintf( '%0.4d-%0.2d-%0.2d',
+                       @{ $self->{c} }{ 'year', 'month', 'day' } );
+
+    return join 'T', $ymd, $self->hms(':');
 }
 *datetime = \&iso8601;
 
@@ -608,16 +610,19 @@ sub strftime {
 sub epoch {
     my $self = shift;
 
-    # timegm may die if given components outside of the ranges it
-    # can handle.  In that case return undef.
-    return
-        eval { Time::Local::timegm( $self->second,
-                                    $self->minute,
-                                    $self->hour,
-                                    $self->day,
-                                    $self->month_0,
-                                    $self->year - 1900,
+    return $self->{c}{epoch} if exists $self->{c}{epoch};
+
+    my ( $year, $month, $day )  = $self->_rd2greg( $self->{utc_rd_days} );
+    my @hms = $self->_seconds_as_components( $self->{utc_rd_secs} );
+
+    $self->{c}{epoch} =
+        eval { Time::Local::timegm( ( reverse @hms ),
+                                    $day,
+                                    $month - 1,
+                                    $year - 1900,
                                   ) };
+
+    return $self->{c}{epoch};
 }
 
 sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
@@ -881,7 +886,9 @@ DateTime - Reference implementation for Perl DateTime objects
   $day_name    = $dt->day_name   # Monday, Tuesday, ...
   $day_abbr    = $dt->day_abbr   # Mon, Tue, ...
 
-  $epoch_time  = $dt->epoch;     # may return undef for non-epoch times
+  $epoch_time  = $dt->epoch;
+  # may return undef if the datetime is outside the range that is
+  # representable by your OS's epoch system.
 
   $dt2 = $dt + $duration_object;
 
@@ -982,15 +989,16 @@ The time_zone parameter can be either a scalar or a
 C<DateTime::TimeZone> object.  A string will simply be passed to the
 C<< DateTime::TimeZone->new >> method as its "name" parameter.  This
 string may be an Olson DB time zone name ("America/Chicago"), an
-offset string ("+0630"), an offset in seconds (-21600), or the words
-"floating" or "local".  See the C<DateTime::TimeZone> documentation
-for more details.
+offset string ("+0630"), or the words "floating" or "local".  See the
+C<DateTime::TimeZone> documentation for more details.
 
 =item * from_epoch( epoch => $epoch, ... )
 
 This class method can be used to construct a new DateTime object from
 an epoch time instead of components.  Just as with the C<new()>
-method, it accepts "language" and "time_zone" parameters.
+method, it accepts a "language" parameter.  The time zone will always
+be "UTC" for any object created from an epoch.  This can be changed
+once the object is created.
 
 =item * now( ... )
 
@@ -1029,7 +1037,8 @@ month/week/year, are 1-based.  Any method that is one based also has
 an equivalent 0-based method ending in "_0".  So for example, this
 class provides both C<day_of_week()> and C<day_of_week_0()> methods.
 
-The C<year_0> method treats the year 1 CE as year 0.
+The C<year_0> method treats the year -1 BCE as year 0, as is
+conventional in astronomy.
 
 The C<day_of_week_0> method still treats Monday as the first day of
 the week.
@@ -1084,8 +1093,7 @@ L<LANGUAGES|/LANGUAGES> section for more details.
 
 =item * day_of_year, doy
 
-Returns the day of the year.  Analogous to the yday attribute of
-gmtime (or localtime) except that it works outside of the epoch.
+Returns the day of the year.
 
 =item * ymd( $optional_separator ), date
 
@@ -1123,6 +1131,9 @@ If no separator is specified, a colon (:) is used by default.
 This method is equivalent to:
 
   $dt->ymd('-') . 'T' . $dt->hms(':')
+
+I<except> that the year is the year as returned by the C<year_0()>
+method.
 
 =item * is_leap_year
 
@@ -1209,8 +1220,8 @@ start of the epoch will be returned as a negative number.
 Since epoch times cannot represent many dates on most platforms, this
 method may simply return undef in some cases.
 
-Using epochs is not recommended, since they have such a limited range,
-at least on 32-bit machines.
+Using your system's epoch time is not recommended, since they have
+such a limited range, at least on 32-bit machines.
 
 =back
 
@@ -1234,9 +1245,9 @@ then the I<local> time is adjusted accordingly.
 
 For example:
 
-  my $dt = DateTime::TimeZone->new( year => 2000, month => 5, day => 10,
-                                    hour => 15, minute => 15,
-                                    time_zone => '-0600', );
+  my $dt = DateTime->new( year => 2000, month => 5, day => 10,
+                          hour => 15, minute => 15,
+                          time_zone => '-0600', );
 
   print $dt->hour; # prints 15
 
@@ -1456,8 +1467,7 @@ seconds, see %T below.
 
 =item * %s
 
-The number of seconds since the Epoch, i.e., since 1970-01-01 00:00:00
-UTC.
+The number of seconds since the epoch.
 
 =item * %S
 
@@ -1509,7 +1519,7 @@ The year as a decimal number including the century.
 
 =item * %z
 
-The time-zone as hour offset from GMT.  Required to emit
+The time-zone as hour offset from UTC.  Required to emit
 RFC822-conformant dates (using "%a, %d %b %Y %H:%M:%S %z").
 
 =item * %Z
