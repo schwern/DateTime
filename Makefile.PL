@@ -45,7 +45,7 @@ EOF
 
         foreach my $file ( grep { /^\d.+\.t$/ } readdir DIR )
         {
-            next if $file eq '26dt-leapsecond-pm.t';
+            next if $file eq '26dt_leapsecond_pm.t';
             next if $file eq '99-pod.t';
 
             my $real_file = File::Spec->catfile( 't', $file );
@@ -84,7 +84,7 @@ sub write_makefile
                    PREREQ_PM    => { 'Class::Factory::Util' => 1.3,
                                      'DateTime::Locale' => 0.03,
                                      'DateTime::TimeZone' => 0.25,
-                                     'Params::Validate' => 0.52,
+                                     'Params::Validate' => 0.70,
                                      'Pod::Man'    => 1.14,
                                      'Test::More'  => 0,
                                      'Time::Local' => 1.04,

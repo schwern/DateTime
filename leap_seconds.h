@@ -11,53 +11,53 @@
 {                                     \
   {                                   \
     if (utc_rd < 719893) {            \
-      ls = 9;           \
+      ls = 0;           \
     } else if (utc_rd >= 719893 && utc_rd < 720075) {  \
-      ls = 10;                      \
+      ls = 1;                      \
     } else if (utc_rd >= 720075 && utc_rd < 720259) {  \
-      ls = 11;                      \
+      ls = 2;                      \
     } else if (utc_rd >= 720259 && utc_rd < 720624) {  \
-      ls = 12;                      \
+      ls = 3;                      \
     } else if (utc_rd >= 720624 && utc_rd < 720989) {  \
-      ls = 13;                      \
+      ls = 4;                      \
     } else if (utc_rd >= 720989 && utc_rd < 721354) {  \
-      ls = 14;                      \
+      ls = 5;                      \
     } else if (utc_rd >= 721354 && utc_rd < 721720) {  \
-      ls = 15;                      \
+      ls = 6;                      \
     } else if (utc_rd >= 721720 && utc_rd < 722085) {  \
-      ls = 16;                      \
+      ls = 7;                      \
     } else if (utc_rd >= 722085 && utc_rd < 722450) {  \
-      ls = 17;                      \
+      ls = 8;                      \
     } else if (utc_rd >= 722450 && utc_rd < 722815) {  \
-      ls = 18;                      \
+      ls = 9;                      \
     } else if (utc_rd >= 722815 && utc_rd < 723362) {  \
-      ls = 19;                      \
+      ls = 10;                      \
     } else if (utc_rd >= 723362 && utc_rd < 723727) {  \
-      ls = 20;                      \
+      ls = 11;                      \
     } else if (utc_rd >= 723727 && utc_rd < 724092) {  \
-      ls = 21;                      \
+      ls = 12;                      \
     } else if (utc_rd >= 724092 && utc_rd < 724823) {  \
-      ls = 22;                      \
+      ls = 13;                      \
     } else if (utc_rd >= 724823 && utc_rd < 725737) {  \
-      ls = 23;                      \
+      ls = 14;                      \
     } else if (utc_rd >= 725737 && utc_rd < 726468) {  \
-      ls = 24;                      \
+      ls = 15;                      \
     } else if (utc_rd >= 726468 && utc_rd < 726833) {  \
-      ls = 25;                      \
+      ls = 16;                      \
     } else if (utc_rd >= 726833 && utc_rd < 727380) {  \
-      ls = 26;                      \
+      ls = 17;                      \
     } else if (utc_rd >= 727380 && utc_rd < 727745) {  \
-      ls = 27;                      \
+      ls = 18;                      \
     } else if (utc_rd >= 727745 && utc_rd < 728110) {  \
-      ls = 28;                      \
+      ls = 19;                      \
     } else if (utc_rd >= 728110 && utc_rd < 728659) {  \
-      ls = 29;                      \
+      ls = 20;                      \
     } else if (utc_rd >= 728659 && utc_rd < 729206) {  \
-      ls = 30;                      \
+      ls = 21;                      \
     } else if (utc_rd >= 729206 && utc_rd < 729755) {  \
-      ls = 31;                      \
+      ls = 22;                      \
     } else {                         \
-      ls = 32;       \
+      ls = 23;       \
     }                              \
   }                                \
 }

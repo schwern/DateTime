@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.18';
+    $VERSION = '0.19';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -116,8 +116,8 @@ my $BasicValidate =
                 },
       day    => { type => SCALAR, default => 1,
                   callbacks =>
-                  { 'is between 1 and 31' =>
-                    sub { $_[0] >= 1 && $_[0] <= 31 },
+                  { 'is a possible valid day of month' =>
+                    sub { $_[0] >= 1 && $_[0] <= 31 }
                   },
                 },
       hour   => { type => SCALAR, default => 0,
@@ -161,10 +161,8 @@ sub new
     my $class = shift;
     my %p = validate( @_, $NewValidate );
 
-    my $last_day = $class->_month_length( $p{year}, $p{month} );
-
     die "Invalid day of month (day = $p{day} - month = $p{month})\n"
-        if $p{day} > $last_day;
+        if $p{day} > $class->_month_length( $p{year}, $p{month} );
 
     my $self = {};
 
@@ -600,6 +598,15 @@ sub _round
     return $val - $int >= 0.5 ? $int + 1 : $int;
 }
 
+sub leap_seconds
+{
+    my $self = shift;
+
+    return 0 if $self->{tz}->is_floating;
+
+    return DateTime->_leap_seconds( $self->{utc_rd_days} );
+}
+
 sub hms
 {
     my ( $self, $sep ) = @_;
@@ -1002,11 +1009,11 @@ sub subtract_datetime_absolute
     my $dt = shift;
 
     my $utc_rd_secs1 = $self->utc_rd_as_seconds;
-    $utc_rd_secs1 += $self->_leap_seconds( $self->{utc_rd_days} )
+    $utc_rd_secs1 += DateTime->_leap_seconds( $self->{utc_rd_days} )
 	if ! $self->time_zone->is_floating;
 
     my $utc_rd_secs2 = $dt->utc_rd_as_seconds;
-    $utc_rd_secs2 += $dt->_leap_seconds( $dt->{utc_rd_days} )
+    $utc_rd_secs2 += DateTime->_leap_seconds( $dt->{utc_rd_days} )
 	if ! $dt->time_zone->is_floating;
 
     my $seconds = $utc_rd_secs1 - $utc_rd_secs2;
@@ -1298,6 +1305,7 @@ my $SetValidate =
             $copy{optional} = 1;
             $_ => \%copy }
       keys %$BasicValidate };
+
 sub set
 {
     my $self = shift;
@@ -1565,6 +1573,24 @@ Some locales may return data as Unicode.  When using Perl 5.6.0 or
 greater, this will be a native Perl Unicode string.  When using older
 Perls, this will be a sequence of bytes representing the Unicode
 character.
+
+=head2 Floating DateTimes
+
+The default time zone for all DateTime objects is the "floating" time
+zone.  This concept comes from the iCal standard.  A floating datetime
+is one which is not anchored to any particular time zone.  In
+addition, floating datetimes do not include leap seconds, since we
+cannot use them without knowing the datetime's time zone.
+
+The results of date math and comparison between a floating datetime
+and one with a real time zone are not really valid, because one
+includes leap seconds and the other does not.  Similarly, the results
+of datetime math between two floating datetimes and two datetimes with
+time zones are not really comparable.
+
+If you are planning to use any objects with a real time zone, it is
+strongly recommended that you B<do not> mix these with floating
+datetimes.
 
 =head2 Methods
 
@@ -1967,8 +1993,8 @@ currently in Daylight Saving Time or not.
 
 =item * time_zone_long_name
 
-This is a shortcut for C<< $dt->tz->name >>.  It's provided so that
-one can use "%{time_zone_long_name}" inside as a strftime format
+This is a shortcut for C<< $dt->time_zone->name >>.  It's provided so
+that one can use "%{time_zone_long_name}" inside as a strftime format
 specifier.
 
 =item * time_zone_short_name
@@ -2029,6 +2055,12 @@ L<DateTime::Infinite|DateTime::Infinite>.
 Returns the current UTC Rata Die days, seconds, and nanoseconds as a
 three element list.  This exists primarily to allow other calendar
 modules to create objects based on the values provided by this object.
+
+=item * leap_seconds
+
+Returns the number of leap seconds that have happened up to the
+datetime represented by the object.  For floating datetimes, this
+always returns 0.
 
 =item * utc_rd_as_seconds
 
@@ -2116,7 +2148,7 @@ work:
 
   $dt->set_time_zone( 'Europe/Paris' );
 
-Yes, now we can know "ni3 na1 bian1 ji3dian2?"
+Yes, now we can know "ni3 na4 bian1 ji3dian2?"
 
 =item * add_duration( $duration_object )
 
