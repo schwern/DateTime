@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 59;
+use Test::More tests => 68;
 
 use DateTime;
 use DateTime::Duration;
@@ -175,4 +175,23 @@ my $leap_day = DateTime->new( year => 2004, month => 2, day => 29,
     ok( ! $dur->is_positive, 'not positive' );
     ok( $dur->is_zero, 'is zero' );
     ok( ! $dur->is_negative, 'not negative' );
+}
+
+{
+    eval { DateTime::Duration->new( months => 3 )->add( hours => -3 )->add( minutes => 1 ) };
+    ok( ! $@, 'method chaining should work' );
+}
+
+{
+    foreach my $p ( { hours => -3, minutes =>  57, seconds =>  2 },
+                    { hours =>  3, minutes => -57, seconds =>  2 },
+                    { hours => -3, minutes => -57, seconds =>  2 },
+                    { hours =>  3, minutes =>  57, seconds => -2 },
+                  )
+    {
+        my $dur = DateTime::Duration->new(%$p);
+
+        is( $dur->delta_minutes, -237, 'delta_minutes should be -237' );
+        is( $dur->delta_seconds, -2, 'delta_seconds should be -2' );
+    }
 }
