@@ -4,9 +4,10 @@ use strict;
 
 use vars qw($VERSION);
 
+
 BEGIN
 {
-    $VERSION = '0.20';
+    $VERSION = '0.21';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -45,7 +46,7 @@ BEGIN
 use DateTime::Duration;
 use DateTime::Locale;
 use DateTime::TimeZone;
-use Params::Validate qw( validate SCALAR BOOLEAN HASHREF OBJECT );
+use Params::Validate qw( validate validate_pos SCALAR BOOLEAN HASHREF OBJECT );
 use Time::Local ();
 
 # for some reason, overloading doesn't work unless fallback is listed
@@ -57,8 +58,9 @@ use Time::Local ();
 use overload ( 'fallback' => 1,
                '<=>' => '_compare_overload',
                'cmp' => '_compare_overload',
-               '-' => '_subtract_overload',
-               '+' => '_add_overload',
+               '""'  => 'iso8601',
+               '-'   => '_subtract_overload',
+               '+'   => '_add_overload',
              );
 
 # Have to load this after overloading is defined, after BEGIN blocks
@@ -69,6 +71,7 @@ use constant MAX_NANOSECONDS => 1_000_000_000;  # 1E9 = almost 32 bits
 
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
+use constant NAN          => INFINITY - INFINITY;
 
 my( @MonthLengths, @LeapYearMonthLengths );
 
@@ -880,12 +883,6 @@ sub is_infinite { 0 }
 # added for benefit of DateTime::TimeZone
 sub utc_year { $_[0]->{utc_year} }
 
-sub add { return shift->add_duration( DateTime::Duration->new(@_) ) }
-
-sub subtract { return shift->subtract_duration( DateTime::Duration->new(@_) ) }
-
-sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
-
 # returns a result that is relative to the first datetime
 sub subtract_datetime
 {
@@ -1109,9 +1106,19 @@ sub _subtract_overload
     # handle other cases?
 }
 
+sub add { return shift->add_duration( DateTime::Duration->new(@_) ) }
+
+sub subtract { return shift->subtract_duration( DateTime::Duration->new(@_) ) }
+
+sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
+
 sub add_duration
 {
-    my ( $self, $dur ) = @_;
+    my $self = shift;
+    my ($dur) = validate_pos( @_, { isa => 'DateTime::Duration' } );
+
+    # simple optimization
+    return $self if $dur->is_zero;
 
     my %deltas = $dur->deltas;
 
@@ -1396,35 +1403,51 @@ sub STORABLE_freeze
     my $self = shift;
     my $cloning = shift;
 
-    my $data = '';
+    my $serialized = '';
     foreach my $key ( qw( utc_rd_days
                           utc_rd_secs
                           rd_nanosecs ) )
     {
-        $data .= "$key:$self->{$key}|";
+        $serialized .= "$key:$self->{$key}|";
     }
 
-    $data .= "locale:" . $self->{locale}->id;
-    $data .= "|tz:" . $self->{tz}->name;
-    $data .= "|version:$VERSION";
+    # not used yet, but may be handy in the future.
+    $serialized .= "version:$VERSION";
 
-    return $data;
+    return $serialized, $self->{locale}, $self->{tz};
 }
 
 sub STORABLE_thaw
 {
     my $self = shift;
     my $cloning = shift;
-    my $data = shift;
+    my $serialized = shift;
 
-    my %data = map { split /:/ } split /\|/, $data;
+    my %serialized = map { split /:/ } split /\|/, $serialized;
 
-    my $tz = DateTime::TimeZone->new( name => delete $data{tz} );
-    my $locale = exists $data{language} ? delete $data{language} : delete $data{locale};
+    my ( $locale, $tz );
 
-    %$self = %data;
+    # more recent code version
+    if (@_)
+    {
+        ( $locale, $tz ) = @_;
+    }
+    else
+    {
+        $tz = DateTime::TimeZone->new( name => delete $serialized{tz} );
+
+        $locale =
+            DateTime::Locale->load( exists $serialized{language}
+                                    ? delete $serialized{language}
+                                    : delete $serialized{locale}
+                                  );
+    }
+
+    delete $serialized{version};
+
+    %$self = %serialized;
     $self->{tz} = $tz;
-    $self->{locale} = DateTime::Locale->load($locale);
+    $self->{locale} = $locale;
 
     $self->_calc_local_rd;
 
@@ -2350,7 +2373,8 @@ Here are the results we get:
 
 When doing date math, you are changing the I<local> datetime.  This is
 generally the same as changing the UTC datetime, except when a change
-crosses a daylight saving boundary.  The net effect of this is that a single day may have more or less than 24.
+crosses a daylight saving boundary.  The net effect of this is that a
+single day may have more or less than 24.
 
 Specifically, if you do this:
 
@@ -2389,6 +2413,36 @@ This avoids the possibility of having date math throw an exception,
 and makes sure that 1 day equals 24 hours.  Of course, this may not
 always be desirable, so caveat user!
 
+=head3 The Results of Date Math
+
+Because date math is done on each unit separately, the results of date
+math may not always be what you expect.
+
+Internally, a duration is made up internally of several different
+units, months, days, minutes, seconds, and nanoseconds.
+
+Of those, the only ones that convert or normalize to other units are
+seconds <=> nanoseconds.  For all the others, there is no fixed
+conversion between the two units, because of things like leap seconds,
+DST changes, etc.
+
+Here's an example, based on a question from Mark Fowler to the
+datetime@perl.org list.
+
+If you want to know how many seconds a duration really represents, you
+have to add it to a datetime to find out, so you could do:
+
+ my $now = DateTime->now( time_zone => 'UTC' );
+ my $later = $now->clone->add_duration($duration);
+
+ my $seconds_dur = $later->subtract_datetime_absolute($now);
+
+This returns a duration which only contains seconds and nanoseconds.
+There are other subtract/delta methods in DateTime.pm to generate
+different types of durations.  These methods are
+C<subtract_datetime()>, C<subtract_datetime_absolute()>,
+C<delta_md()>, L<delta_days()>, and C<delta_ms()>.
+
 =head2 Overloading
 
 This module explicitly overloads the addition (+), subtraction (-),
@@ -2406,6 +2460,9 @@ following all do sensible things:
 Additionally, the fallback parameter is set to true, so other
 derivable operators (+=, -=, etc.) will work properly.  Do not expect
 increment (++) or decrement (--) to do anything useful.
+
+The module also overloads stringification to use the C<iso8601()>
+method.
 
 =head2 strftime Specifiers
 
