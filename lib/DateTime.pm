@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1503';
+    $VERSION = '0.16';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -45,7 +45,6 @@ BEGIN
 use DateTime::Duration;
 use DateTime::Locale;
 use DateTime::TimeZone;
-use DateTime::LeapSecond;
 use Params::Validate qw( validate SCALAR BOOLEAN HASHREF OBJECT );
 use Time::Local ();
 
@@ -252,6 +251,8 @@ sub _normalize_seconds
 {
     my $self = shift;
 
+    return if $self->{utc_rd_secs} >= 0 && $self->{utc_rd_secs} <= 86399;
+
     if ( $self->{tz}->is_floating )
     {
         $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
@@ -259,46 +260,6 @@ sub _normalize_seconds
     else
     {
         $self->_normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
-    }
-}
-
-sub _normalize_leap_seconds
-{
-    # args: 0 => days, 1 => seconds
-    my $delta_days;
-
-    use integer;
-
-    # rough adjust - can adjust many days
-    if ( $_[2] < 0 )
-    {
-        $delta_days = ($_[2] - 86399) / 86400;
-    }
-    else
-    {
-        $delta_days = $_[2] / 86400;
-    }
-
-    my $new_day = $_[1] + $delta_days;
-    my $delta_seconds = ( 86400 * $delta_days ) +
-                        DateTime::LeapSecond::leap_seconds( $new_day ) -
-                        DateTime::LeapSecond::leap_seconds( $_[1] );
-
-    $_[2] -= $delta_seconds;
-    $_[1] = $new_day;
-
-    # fine adjust - up to 1 day
-    my $day_length = DateTime::LeapSecond::day_length( $new_day );
-    if ( $_[2] >= $day_length )
-    {
-        $_[2] -= $day_length;
-        $_[1]++;
-    }
-    elsif ( $_[2] < 0 )
-    {
-        $day_length = DateTime::LeapSecond::day_length( $new_day - 1 );
-        $_[2] += $day_length;
-        $_[1]--;
     }
 }
 
@@ -756,7 +717,7 @@ sub jd
 
     my $jd = $self->{utc_rd_days} + 1_721_424.5;
 
-    my $day_length = DateTime::LeapSecond::day_length( $self->{utc_rd_days} );
+    my $day_length = $self->_day_length( $self->{utc_rd_days} );
 
     return ( $jd +
              ( $self->{utc_rd_secs} / $day_length )  +
@@ -934,7 +895,7 @@ sub subtract_datetime
                       $dt->time_zone->is_floating;
 
     my ( $days, $seconds, $nanoseconds ) =
-        _adjust_for_positive_difference
+        $self->_adjust_for_positive_difference
             ( $bigger->{utc_rd_days}, $smaller->{utc_rd_days},
               $bigger->{utc_rd_secs}, $smaller->{utc_rd_secs},
               $bigger->{rd_nanosecs}, $smaller->{rd_nanosecs},
@@ -962,7 +923,7 @@ sub subtract_datetime
 
 sub _adjust_for_positive_difference
 {
-    my ( $day1, $day2, $sec1, $sec2, $nano1, $nano2, $is_floating ) = @_;
+    my ( $self, $day1, $day2, $sec1, $sec2, $nano1, $nano2, $is_floating ) = @_;
 
     if ( $nano1 < $nano2 )
     {
@@ -973,7 +934,7 @@ sub _adjust_for_positive_difference
     if ( $sec1 < $sec2 )
     {
         $day1--;
-        $sec1 += $is_floating ? 86400 : DateTime::LeapSecond::day_length($day1);
+        $sec1 += $is_floating ? 86400 : $self->_day_length($day1);
     }
 
     return ( $day1 - $day2,

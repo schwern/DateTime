@@ -40,6 +40,8 @@ EOF
 
         foreach my $file ( grep { /^\d.+\.t$/ } readdir DIR )
         {
+            next if $file eq '26dt-leapsecond-pm.t';
+
             my $real_file = File::Spec->catfile( 't', $file );
 
             local *F;
@@ -78,8 +80,7 @@ sub write_makefile
                                      'Params::Validate' => 0.52,
                                      'Test::More'  => 0,
                                      'Time::Local' => 1.04,
-                                     'DateTime::LeapSecond' => 0.02,
-                                     'DateTime::Locale' => 0.01,
+                                     'DateTime::Locale' => 0.03,
                                    },
                  );
 }

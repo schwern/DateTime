@@ -2,6 +2,7 @@ package DateTime;
 
 use strict;
 
+require DateTime::LeapSecond;
 require DateTimePPExtra;
 
 my @MonthLengths =
@@ -203,6 +204,8 @@ sub _is_leap_year
 
     return 0;
 }
+
+sub _day_length { DateTime::LeapSecond::day_length($_[1]) }
 
 
 1;

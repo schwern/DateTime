@@ -1,3 +1,17 @@
+0.16
+
+[ IMPROVEMENTS ]
+
+- The XS code now implements leap second-related calculations.
+However, this is only used on platforms where we can find a usable
+finite() or isfinite() function/macro, so it isn't used on Win32.
+
+- This distro has now borged the DateTime::LeapSecond module.  It is
+only loaded when the XS leap second code cannot be used.
+
+- Other miscellaneous performance improvements.
+
+
 0.1503  2003-07-31
 
 [ BUG FIXES ]
