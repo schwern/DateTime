@@ -1,3 +1,21 @@
+0.15   2003-07-29
+
+[ IMPROVEMENTS ]
+
+- The utc_rd_values() method now returns nanoseconds in addition, Rata
+Die days and minutes.  Based on a patch by Joshua Hoblitt.
+
+- The from_object() method expects objects to return the same values
+from their utc_rd_values() methods.  Based on a patch by Joshua Hoblitt.
+
+[ BUG FIXES ]
+
+- Fixed a bug in the pure Perl version of _normalize_tai_seconds that
+caused very weird results from datetime math.  This version may be
+used on platforms where the XS code compiles, so it can affect quite a
+number of systems.  Reported by Dan Sully.
+
+
 0.1402   2003-07-24
 
 [ BUG FIXES ]
@@ -28,6 +46,8 @@ be removed in a future release.
 Also note that locales should be specified via ISO codes, not names
 like "English".  The old DateTime::Language names will continue to
 work indefinitely, but they load DateTime::Locale objects instead.
+
+Locale-specific data will be returned in utf8 when necessary.
 
 - Similarly, the "language" and "DefaultLanguage" methods are now
 deprecated in favor of "locale" and "DefaultLocale".

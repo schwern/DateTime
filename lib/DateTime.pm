@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1402';
+    $VERSION = '0.15';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -416,16 +416,18 @@ sub from_object
 
     my $object = delete $p{object};
 
-    my ( $rd_days, $rd_secs ) = $object->utc_rd_values;
+    my ( $rd_days, $rd_secs, $rd_nanosecs ) = $object->utc_rd_values;
+
+    # A kludge because until all calendars are updated to return all
+    # three values, $rd_nanosecs could be undef
+    $rd_nanosecs ||= 0;
 
     my %args;
     @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
     @args{ qw( hour minute second ) } = $class->_seconds_as_components($rd_secs);
+    $args{nanosecond} = $rd_nanosecs;
 
     my $new = $class->new( %p, %args, time_zone => 'UTC' );
-
-    $new->set( nanosecond => $object->nanosecond )
-        if $object->can('nanosecond');
 
     $new->set_time_zone( $object->time_zone )
         if $object->can('time_zone');
@@ -728,7 +730,7 @@ sub time_zone_short_name { $_[0]->{tz}->short_name_for_datetime( $_[0] ) }
 sub locale { $_[0]->{locale} }
 *language = \&locale;
 
-sub utc_rd_values { @{ $_[0] }{ 'utc_rd_days', 'utc_rd_secs' } }
+sub utc_rd_values { @{ $_[0] }{ 'utc_rd_days', 'utc_rd_secs', 'rd_nanosecs' } }
 
 # NOTE: no nanoseconds, no leap seconds
 sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * 86400 ) + $_[0]->{utc_rd_secs} }
@@ -818,15 +820,15 @@ sub strftime
     foreach my $f (@formats)
     {
         $f =~ s/
-	        %{(\w+)}
-	       /
+                %{(\w+)}
+               /
                 $self->$1() if $self->can($1);
                /sgex;
 
         # regex from Date::Format - thanks Graham!
        $f =~ s/
-	        %([%a-zA-Z])
-	       /
+                %([%a-zA-Z])
+               /
                 $formats{$1} ? $formats{$1}->($self) : $1
                /sgex;
 
@@ -1368,7 +1370,7 @@ DateTime - A date and time object
 
   $is_leap  = $dt->is_leap_year;
 
-  # these are localizable, see LOCALES section
+  # these are localizable, see Locales section
   $month_name  = $dt->month_name # January, February, ...
   $month_abbr  = $dt->month_abbr # Jan, Feb, ...
   $day_name    = $dt->day_name   # Monday, Tuesday, ...
@@ -1665,12 +1667,12 @@ Returns the month of the year, from 1..12.
 =item * month_name
 
 Returns the name of the current month.  See the
-L<LOCALES|/LOCALES> section for more details.
+L<Locales|/Locales> section for more details.
 
 =item * month_abbr
 
 Returns the abbreviated name of the current month.  See the
-L<LOCALES|/LOCALES> section for more details.
+L<Locales|/Locales> section for more details.
 
 =item * day_of_month, day, mday
 
@@ -1684,12 +1686,12 @@ Monday and 7 being Sunday.
 =item * day_name
 
 Returns the name of the current day of the week.  See the
-L<LOCALES|/LOCALES> section for more details.
+L<Locales|/Locales> section for more details.
 
 =item * day_abbr
 
 Returns the abbreviated name of the current day of the week.  See the
-L<LOCALES|/LOCALES> section for more details.
+L<Locales|/Locales> section for more details.
 
 =item * day_of_year, doy
 
@@ -1900,9 +1902,9 @@ L<DateTime::Infinite|DateTime::Infinite>.
 
 =item * utc_rd_values
 
-Returns the current UTC Rata Die days and seconds as a two element
-list.  This exists primarily to allow other calendar modules to create
-objects based on the values provided by this object.
+Returns the current UTC Rata Die days, seconds, and nanoseconds as a
+three element list.  This exists primarily to allow other calendar
+modules to create objects based on the values provided by this object.
 
 =item * utc_rd_as_seconds
 
@@ -1931,8 +1933,8 @@ possible. For example:
   my $dt = DateTime->now->set_time_zone( 'Australia/Sydney' );
 
   my $first = DateTime
-		->last_day_of_month( year => 2003, month => 3 )
-		->add( days => 1 )
+                ->last_day_of_month( year => 2003, month => 3 )
+                ->add( days => 1 )
                 ->subtract( seconds => 1 );
 
 =over 4
