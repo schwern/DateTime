@@ -7,7 +7,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.27';
+    $VERSION = '0.28';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -596,11 +596,13 @@ sub ce_year { $_[0]->{local_c}{year} <= 0 ?
               $_[0]->{local_c}{year} - 1 :
               $_[0]->{local_c}{year} }
 
-sub era { $_[0]->ce_year > 0 ? 'CE' : 'BCE' }
+sub era { $_[0]->{locale}->era( $_[0] ) }
 sub christian_era { $_[0]->ce_year > 0 ? 'AD' : 'BC' }
+sub secular_era   { $_[0]->ce_year > 0 ? 'CE' : 'BCE' }
 
 sub year_with_era { (abs $_[0]->ce_year) . $_[0]->era }
 sub year_with_christian_era { (abs $_[0]->ce_year) . $_[0]->christian_era }
+sub year_with_secular_era   { (abs $_[0]->ce_year) . $_[0]->secular_era }
 
 sub month   { $_[0]->{local_c}{month} }
 *mon = \&month;
@@ -889,7 +891,7 @@ my %formats =
       'U' => sub { my $dow = $_[0]->day_of_week;
                    $dow = 0 if $dow == 7; # convert to 0-6, Sun-Sat
                    my $doy = $_[0]->day_of_year - 1;
-                   return int( ( $doy - $dow + 13 ) / 7 - 1 )
+                   return sprintf( '%02d', int( ( $doy - $dow + 13 ) / 7 - 1 ) )
                  },
       'V' => sub { sprintf( '%02d', $_[0]->week_number ) },
       'w' => sub { my $dow = $_[0]->day_of_week;
@@ -897,7 +899,7 @@ my %formats =
                  },
       'W' => sub { my $dow = $_[0]->day_of_week;
                    my $doy = $_[0]->day_of_year - 1;
-                   return int( ( $doy - $dow + 13 ) / 7 - 1 )
+                   return sprintf( '%02d', int( ( $doy - $dow + 13 ) / 7 - 1 ) )
                  },
       'x' => sub { $_[0]->strftime( $_[0]->{locale}->default_date_format ) },
       'X' => sub { $_[0]->strftime( $_[0]->{locale}->default_time_format ) },
@@ -1036,21 +1038,24 @@ sub subtract_datetime
         }
     }
 
+    my @bigger  = ( $bigger->_utc_ymd, $bigger->_utc_hms );
+    my @smaller = ( $smaller->_utc_ymd, $smaller->_utc_hms );
+
     my ( $months, $days, $minutes, $seconds, $nanoseconds ) =
         $self->_adjust_for_positive_difference
-            ( $bigger->year * 12 + $bigger->month, $smaller->year * 12 + $smaller->month,
+            ( $bigger[0] * 12 + $bigger[1], $smaller[0] * 12 + $smaller[1],
 
-              $bigger->day, $smaller->day,
+              $bigger[2], $smaller[2],
 
-              $bigger->hour * 60 + $bigger->minute, $smaller->hour * 60 + $smaller->minute,
+              $bigger[3] * 60 + $bigger[4], $smaller[3] * 60 + $smaller[4],
 
-	      $bigger->second, $smaller->second,
+	      $bigger[5], $smaller[5],
 
 	      $bigger->nanosecond, $smaller->nanosecond,
 
 	      $minute_length,
 
-	      $self->_month_length( $smaller->year, $smaller->month ),
+	      $self->_month_length( $smaller[0], $smaller[1] ),
             );
 
     if ($negative)
@@ -1997,21 +2002,31 @@ before year 1 in this system is year -1, aka "1 BCE".
 
 =item * era
 
-Returns a string, either "BCE" or "CE", according to the year.
+Returns a string provided by the locale, based on the year.
 
 =item * christian_era
 
 Returns a string, either "BC" or "AD", according to the year.
 
+=item * secular_era
+
+Returns a string, either "BCE" or "CE", according to the year.
+
 =item * year_with_era
 
 Returns a string containing the year immediately followed by its era.
 The year is the absolute value of C<ce_year()>, so that year 1 is
-"1CE" and year 0 is "1BCE".
+"1BC" and year 0 is "1AD".
 
 =item * year_with_christian_era
 
-Like C<year_with_era()>, but uses the Christian era.
+Like C<year_with_era()>, but uses the christian_era() to get the era
+name.
+
+=item * year_with_secular_era
+
+Like C<year_with_era()>, but uses the secular_era() method to get the
+era name.
 
 =item * month
 
