@@ -1,4 +1,37 @@
-0.08
+0.09     2003-04-05 (the "liberation through violence" release)
+
+[IMPROVEMENTS]
+
+- As requested by numerous people, there is now a pure Perl
+implementation of DateTime.pm included with this distribution.  If you
+don't have a C compiler it will be used instead of the XS
+implementation.
+
+- Document how floating time zones are handling in comparisons, and
+add the compare_ignore_floating method.  Based on a patch from Eugene
+van der Pijll.
+
+- Allow from_epoch(), now(), and today() to accept a time_zone
+parameter.  Based on suggestions from Tim Bunce and Joshua Hoblitt.
+
+- Allow extraction of AM/PM string list from DateTime::Language classes.
+
+- Added quarter() and day_of_quarter() methods.  Based on a patch from
+Tim Allwine.
+
+[BUG FIXES]
+
+- If a datetime had the floating timezone and then set_time_zone was
+used to set it to something else, the internal UTC time of the object
+was not changed, meaning that its offset could be calculated
+incorrectly.  Patch by Eugene van der Pijll.
+
+- If datetime math was done with hours, minutes, or seconds, the
+return value of ->epoch would be wrong after this.  Based on report
+and patch from Iain Truskett.
+
+
+0.08     2003-03-21 (the "anti-war" release)
 
 [IMPROVEMENTS]
 

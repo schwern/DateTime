@@ -4,13 +4,24 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.08';
+BEGIN
+{
+    $VERSION = '0.09';
 
-use DynaLoader;
+    my $loaded = 0;
+    unless ( $ENV{PERL_DATETIME_PP} )
+    {
+        require DynaLoader;
 
-@DateTime::ISA = 'DynaLoader';
+        @DateTime::ISA = 'DynaLoader';
 
-bootstrap DateTime $DateTime::VERSION;
+        bootstrap DateTime $DateTime::VERSION;
+
+        $loaded = 1;
+    }
+
+    require DateTimePP unless $loaded;
+}
 
 use DateTime::Duration;
 use DateTime::Language;
@@ -153,7 +164,8 @@ sub _calc_local_components
 {
     my $self = shift;
 
-    @{ $self->{local_c} }{ qw( year month day day_of_week day_of_year ) } =
+    @{ $self->{local_c} }{ qw( year month day day_of_week
+                               day_of_year quarter day_of_quarter) } =
         $self->_rd2ymd( $self->{local_rd_days}, 1 );
 
     @{ $self->{local_c} }{ qw( hour minute second ) } =
@@ -192,25 +204,32 @@ sub _utc_hms
 sub from_epoch
 {
     my $class = shift;
-    my %args = validate( @_,
+    my %p = validate( @_,
                          { epoch => { type => SCALAR },
                            language => { type => SCALAR | OBJECT, optional => 1 },
+                           time_zone => { type => SCALAR | OBJECT, optional => 1 },
                          }
                        );
 
-    my %p;
+    my %args;
     # Note, for very large negative values this may give a blatantly
     # wrong answer.
-    @p{ qw( second minute hour day month year ) } =
-        ( gmtime( delete $args{epoch} ) )[ 0..5 ];
-    $p{year} += 1900;
-    $p{month}++;
+    @args{ qw( second minute hour day month year ) } =
+        ( gmtime( delete $p{epoch} ) )[ 0..5 ];
+    $args{year} += 1900;
+    $args{month}++;
 
-    return $class->new( %args, %p, time_zone => 'UTC' );
+    my $self = $class->new( %args, %p, time_zone => 'UTC' );
+
+    $self->set_time_zone( $p{time_zone} ) if exists $p{time_zone};
+
+    return $self;
 }
 
 # use scalar time in case someone's loaded Time::Piece
 sub now { shift->from_epoch( epoch => (scalar time), @_ ) }
+
+sub today { shift->now(@_)->truncate( to => 'day' ) }
 
 sub from_object
 {
@@ -292,6 +311,8 @@ sub day_of_month { $_[0]->{local_c}{day} }
 *day  = \&day_of_month;
 *mday = \&day_of_month;
 
+sub quarter {$_[0]->{local_c}{quarter} };
+
 sub day_of_month_0 { $_[0]->{local_c}{day} - 1 }
 *day_0  = \&day_of_month_0;
 *mday_0 = \&day_of_month_0;
@@ -307,6 +328,12 @@ sub day_of_week_0 { $_[0]->{local_c}{day_of_week} - 1 }
 sub day_name { $_[0]->{language}->day_name( $_[0] ) }
 
 sub day_abbr { $_[0]->{language}->day_abbreviation( $_[0] ) }
+
+sub day_of_quarter { $_[0]->{local_c}{day_of_quarter} }
+*doq = \&day_of_quarter;
+
+sub day_of_quarter_0 { $_[0]->day_of_quarter - 1 }
+*doq_0 = \&day_of_quarter_0;
 
 sub day_of_year { $_[0]->{local_c}{day_of_year} }
 *doy = \&day_of_year;
@@ -659,6 +686,7 @@ sub add_duration
         $self->{utc_rd_secs} += $deltas{seconds};
         _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
 
+        delete $self->{utc_c};
         $self->_calc_local_rd;
     }
 
@@ -714,7 +742,17 @@ sub _compare_overload
 
 sub compare
 {
-    my ( $class, $dt1, $dt2 ) = ref $_[0] ? ( undef, @_ ) : @_;
+    shift->_compare( @_, 0 );
+}
+
+sub compare_ignore_floating
+{
+    shift->_compare( @_, 1 );
+}
+
+sub _compare
+{
+    my ( $class, $dt1, $dt2, $consistent ) = ref $_[0] ? ( undef, @_ ) : @_;
 
     return undef unless defined $dt2;
 
@@ -724,6 +762,24 @@ sub compare
     die "Cannot compare a datetime to a regular scalar"
         unless ( UNIVERSAL::can( $dt1, 'utc_rd_values' ) &&
                  UNIVERSAL::can( $dt2, 'utc_rd_values' ) );
+
+    if ( ! $consistent &&
+         UNIVERSAL::can( $dt1, 'time_zone' ) &&
+         UNIVERSAL::can( $dt2, 'time_zone' )
+       )
+    {
+        my $is_floating1 = $dt1->time_zone->is_floating;
+        my $is_floating2 = $dt2->time_zone->is_floating;
+
+        if ( $is_floating1 && ! $is_floating2 )
+        {
+            $dt1 = $dt1->clone->set_time_zone( $dt2->time_zone );
+        }
+        elsif ( $is_floating2 && ! $is_floating1 )
+        {
+            $dt2 = $dt2->clone->set_time_zone( $dt1->time_zone );
+        }
+    }
 
     my ($days1, $secs1) = $dt1->utc_rd_values;
     my ($days2, $secs2) = $dt2->utc_rd_values;
@@ -793,7 +849,8 @@ sub set_time_zone
 
     $self->{tz} = ref $tz ? $tz : DateTime::TimeZone->new( name => $tz );
 
-    if ( $self->{tz}->is_floating && ! $was_floating )
+    # if it either was or now is floating (but not both)
+    if ( $self->{tz}->is_floating xor $was_floating )
     {
         $self->_calc_utc_rd;
     }
@@ -849,6 +906,11 @@ DateTime - Reference implementation for Perl DateTime objects
 
   $doy    = $dt->day_of_year    # 1-366 (leap years)
   # also $dt->doy
+  
+  $doq    = $dt->day_of_quarter # 1-(number of days)
+  # also $dt->doq
+
+  $qtr    = $dt->quarter        # 1-4
 
   # all of the start-at-1 methods above have correponding start-at-0
   # methods, such as $dt->day_of_month_0, $dt->month_0 and so on
@@ -1029,14 +1091,18 @@ This may change in future version of this module.
 
 This class method can be used to construct a new DateTime object from
 an epoch time instead of components.  Just as with the C<new()>
-method, it accepts a "language" parameter.  The time zone will always
-be "UTC" for any object created from an epoch.  This can be changed
-once the object is created.
+method, it accepts "time_zone" and "language" parameters.
 
 =item * now( ... )
 
 This class method is equivalent to calling C<from_epoch()> with the
 value returned from Perl's C<time()> function.
+
+=item * today( ... )
+
+This class method is equivalent to:
+
+  DateTime->now->truncate( to => 'day' );
 
 =item * from_object( object => $object, ... )
 
@@ -1074,7 +1140,7 @@ method that is 1-based also has an equivalent 0-based method ending in
 "_0".  So for example, this class provides both C<day_of_week()> and
 C<day_of_week_0()> methods.
 
-The C<day_of_week_0> method still treats Monday as the first day of
+The C<day_of_week_0()> method still treats Monday as the first day of
 the week.
 
 All I<time>-related numbers such as hour, minute, and second are
@@ -1082,6 +1148,8 @@ All I<time>-related numbers such as hour, minute, and second are
 
 Years are neither, as they can be both positive or negative, unlike
 any other datetime component.  There I<is> a year 0.
+
+There is no C<quarter_0()> method.
 
 =head2 Methods
 
@@ -1135,6 +1203,14 @@ L<LANGUAGES|/LANGUAGES> section for more details.
 =item * day_of_year, doy
 
 Returns the day of the year.
+
+=item * day_of_quarter, doq
+
+Returns the day of the quarter.
+
+=item * quarter
+
+Returns the quarter of the year.
 
 =item * ymd( $optional_separator ), date
 
@@ -1361,18 +1437,38 @@ the difference between the two dates.
 
 =item * compare
 
-  $cmp = DateTime->compare($dt1, $dt2);
+=item * compare_ignore_floating
 
-  @dates = sort { DateTime->compare($a, $b) } @dates;
+  $cmp = DateTime->compare( $dt1, $dt2 );
+
+  $cmp = DateTime->compare_ignore_floating( $dt1, $dt2 );
 
 Compare two DateTime objects.  The semantics are compatible with
 Perl's C<sort()> function; it returns -1 if $a < $b, 0 if $a == $b, 1
 if $a > $b.
 
-Of course, since DateTime objects overload comparison operators, you
-can just do this anyway:
+If one of the two DateTime objects has a floating time zone, it will
+first be converted to the time zone of the other object.  This is what
+you want most of the time, but it can lead to inconsistent results
+when you compare a number of DateTime objects, some of which are
+floating, and some of which are in other time zones.
+
+If you want to have consistent results (because you want to sort a
+number of objects, for example), you can use the
+C<compare_ignore_floating()> method:
+
+  @dates = sort { DateTime->compare_ignore_floating($a, $b) } @dates;
+
+In this case, objects with a floating time zone will be sorted as if
+they were UTC times.
+
+Since DateTime objects overload comparison operators, this:
 
   @dates = sort @dates;
+
+is equivalent to this:
+
+  @dates = sort { DateTime->compare($a, $b) } @dates;
 
 =back
 

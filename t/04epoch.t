@@ -1,6 +1,6 @@
 use strict;
 
-use Test::More tests => 17;
+use Test::More tests => 24;
 
 use DateTime;
 
@@ -59,4 +59,33 @@ use DateTime;
                           );
 
     is( $dt->epoch, 3600, 'epoch is 3600' );
+}
+
+{
+
+    my $dt = DateTime->from_epoch( epoch => 0,
+                                   time_zone => '-0100',
+                                 );
+
+    is( $dt->offset, -3600, 'offset should be -3600' );
+    is( $dt->epoch, 0, 'epoch is 0' );
+}
+
+# Adding/subtracting should affect epoch
+{
+    my $expected = '1049160602';
+    my $epochtest = DateTime->from_epoch( epoch => $expected  );
+
+    is( $epochtest->epoch, $expected,
+        "epoch method returns correct value ($expected)");
+    is( $epochtest->hour, 1, "hour" );
+    is( $epochtest->min, 30, "minute" );
+
+    $epochtest->add( hours => 2 );
+    $expected += 2*60*60;
+
+    is( $epochtest->hour, 3, "adjusted hour" );
+    is( $epochtest->epoch, $expected,
+        "epoch method returns correct adjusted value ($expected)");
+
 }
