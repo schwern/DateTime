@@ -7,7 +7,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.22';
+    $VERSION = '0.23';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -58,7 +58,7 @@ use Time::Local ();
 use overload ( 'fallback' => 1,
                '<=>' => '_compare_overload',
                'cmp' => '_compare_overload',
-               '""'  => 'iso8601',
+               '""'  => 'format_datetime',
                '-'   => '_subtract_overload',
                '+'   => '_add_overload',
              );
@@ -72,6 +72,8 @@ use constant MAX_NANOSECONDS => 1_000_000_000;  # 1E9 = almost 32 bits
 use constant INFINITY     =>       100 ** 100 ** 100 ;
 use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 use constant NAN          => INFINITY - INFINITY;
+
+use constant SECONDS_PER_DAY => 86400;
 
 my( @MonthLengths, @LeapYearMonthLengths );
 
@@ -157,6 +159,7 @@ my $NewValidate =
     { %$BasicValidate,
       time_zone => { type => SCALAR | OBJECT,
                      default => 'floating' },
+      formatter => { type => SCALAR | OBJECT, can => 'format_datetime', optional => 1 },
     };
 
 sub new
@@ -167,7 +170,7 @@ sub new
     die "Invalid day of month (day = $p{day} - month = $p{month})\n"
         if $p{day} > $class->_month_length( $p{year}, $p{month} );
 
-    my $self = {};
+    my $self = bless {}, $class;
 
     $p{locale} = delete $p{language} if exists $p{language};
     $p{locale} = $class->DefaultLocale unless defined $p{locale};
@@ -193,9 +196,10 @@ sub new
     $self->{local_rd_secs} =
         $class->_time_as_seconds( @p{ qw( hour minute second ) } );
 
-    $self->{rd_nanosecs} = $p{nanosecond};
+    $self->{offset_modifier} = 0;
 
-    bless $self, $class;
+    $self->{rd_nanosecs} = $p{nanosecond};
+    $self->{formatter} = $p{formatter};
 
     $self->_normalize_nanoseconds( $self->{local_rd_secs}, $self->{rd_nanosecs} );
 
@@ -208,6 +212,9 @@ sub new
     $self->{utc_year} = $p{year} + 1;
 
     $self->_calc_utc_rd;
+
+    $self->_handle_offset_modifier( $p{second} );
+
     $self->_calc_local_rd;
 
     if ( $p{second} > 59 )
@@ -227,6 +234,68 @@ sub new
     return $self;
 }
 
+sub _handle_offset_modifier
+{
+    my $self = shift;
+
+    return if $self->{tz}->is_floating;
+
+    my $second = shift;
+    my $utc_rd_days = @_ ? shift : $self->{utc_rd_days};
+
+    my $offset = $self->_offset_for_local_datetime;
+
+    if ( $offset >= 0
+         && $self->{local_rd_secs} >= $offset
+       )
+    {
+        if ( $second < 60 && $offset > 0 )
+        {
+            $self->{offset_modifier} =
+                $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+
+            $self->{local_rd_secs} += $self->{offset_modifier};
+        }
+        elsif ( ( $self->{local_rd_secs} == $offset
+                  && $offset > 0 )
+                ||
+                ( $offset == 0
+                  && $self->{local_rd_secs} > 86399 ) )
+        {
+            my $mod = $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+
+            unless ( $mod == 0 )
+            {
+                $self->{utc_rd_secs} -= $mod;
+
+                $self->_normalize_seconds;
+            }
+        }
+    }
+    elsif ( $offset < 0
+            && $self->{local_rd_secs} >= SECONDS_PER_DAY + $offset )
+    {
+        if ( $second < 60 )
+        {
+            $self->{offset_modifier} =
+                $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+
+            $self->{local_rd_secs} += $self->{offset_modifier};
+        }
+        elsif ( $self->{local_rd_secs} == SECONDS_PER_DAY + $offset )
+        {
+            my $mod = $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+
+            unless ( $mod == 0 )
+            {
+                $self->{utc_rd_secs} -= $mod;
+
+                $self->_normalize_seconds;
+            }
+        }
+    }
+}
+
 sub _calc_utc_rd
 {
     my $self = shift;
@@ -240,12 +309,17 @@ sub _calc_utc_rd
     }
     else
     {
+        my $offset = $self->_offset_for_local_datetime;
+
+        $offset += $self->{offset_modifier};
+
         $self->{utc_rd_days} = $self->{local_rd_days};
-        $self->{utc_rd_secs} =
-            $self->{local_rd_secs} - $self->_offset_from_local_time;
+        $self->{utc_rd_secs} = $self->{local_rd_secs} - $offset;
     }
 
-    $self->_normalize_seconds;
+    # We account for leap seconds in the new() method and nowhere else
+    # except date math.
+    $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
 }
 
 sub _normalize_seconds
@@ -279,8 +353,12 @@ sub _calc_local_rd
     }
     else
     {
+        my $offset = $self->offset;
+
+        $offset += $self->{offset_modifier};
+
         $self->{local_rd_days} = $self->{utc_rd_days};
-        $self->{local_rd_secs} = $self->{utc_rd_secs} + $self->offset;
+        $self->{local_rd_secs} = $self->{utc_rd_secs} + $offset;
 
         # intentionally ignore leap seconds here
         $self->_normalize_tai_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
@@ -298,14 +376,16 @@ sub _calc_local_components
         $self->_rd2ymd( $self->{local_rd_days}, 1 );
 
     @{ $self->{local_c} }{ qw( hour minute second ) } =
-        $self->_seconds_as_components( $self->{local_rd_secs}, $self->{utc_rd_secs} );
+        $self->_seconds_as_components
+            ( $self->{local_rd_secs}, $self->{utc_rd_secs}, $self->{offset_modifier} );
 }
 
 sub _calc_utc_components
 {
     my $self = shift;
 
-    $self->_calc_utc_rd unless defined $self->{utc_rd_days};
+    die "Cannot get UTC components before UTC RD has been calculated\n"
+        unless defined $self->{utc_rd_days};
 
     @{ $self->{utc_c} }{ qw( year month day ) } =
         $self->_rd2ymd( $self->{utc_rd_days} );
@@ -340,6 +420,8 @@ sub from_epoch
                         locale     => { type => SCALAR | OBJECT, optional => 1 },
                         language   => { type => SCALAR | OBJECT, optional => 1 },
                         time_zone  => { type => SCALAR | OBJECT, optional => 1 },
+                        formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
+                                        optional => 1 },
                       }
                     );
 
@@ -378,6 +460,8 @@ sub from_object
                                   },
                         locale     => { type => SCALAR | OBJECT, optional => 1 },
                         language   => { type => SCALAR | OBJECT, optional => 1 },
+                        formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
+                                        optional => 1 },
                       },
                     );
 
@@ -389,10 +473,24 @@ sub from_object
     # three values, $rd_nanosecs could be undef
     $rd_nanosecs ||= 0;
 
+    # This is a big hack to let _seconds_as_components operate naively
+    # on the given value.  If the object _is_ on a leap second, we'll
+    # add that to the generated seconds value later.
+    my $leap_seconds = 0;
+    if ( $object->can('time_zone') && ! $object->time_zone->is_floating
+         && $rd_secs > 86399 && $rd_secs <= $class->_day_length($rd_days) )
+    {
+        $leap_seconds = $rd_secs - 86399;
+        $rd_secs -= $leap_seconds;
+    }
+
     my %args;
     @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
-    @args{ qw( hour minute second ) } = $class->_seconds_as_components($rd_secs);
+    @args{ qw( hour minute second ) } =
+        $class->_seconds_as_components($rd_secs);
     $args{nanosecond} = $rd_nanosecs;
+
+    $args{second} += $leap_seconds;
 
     my $new = $class->new( %p, %args, time_zone => 'UTC' );
 
@@ -481,6 +579,8 @@ sub from_day_of_year
                         );
 }
 
+sub formatter { $_[0]->{formatter} }
+
 sub clone { bless { %{ $_[0] } }, ref $_[0] }
 
 sub year    { $_[0]->{local_c}{year} }
@@ -490,8 +590,10 @@ sub ce_year { $_[0]->{local_c}{year} <= 0 ?
               $_[0]->{local_c}{year} }
 
 sub era { $_[0]->ce_year > 0 ? 'CE' : 'BCE' }
+sub christian_era { $_[0]->ce_year > 0 ? 'AD' : 'BC' }
 
 sub year_with_era { (abs $_[0]->ce_year) . $_[0]->era }
+sub year_with_christian_era { (abs $_[0]->ce_year) . $_[0]->christian_era }
 
 sub month   { $_[0]->{local_c}{month} }
 *mon = \&month;
@@ -607,7 +709,15 @@ sub leap_seconds
 
     return 0 if $self->{tz}->is_floating;
 
-    return DateTime->_leap_seconds( $self->{utc_rd_days} );
+    return DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} );
+}
+
+sub format_datetime
+{
+    my $self = shift;
+
+    return $self->iso8601 unless $self->{formatter};
+    return $self->{formatter}->format_datetime($self);
 }
 
 sub hms
@@ -700,8 +810,8 @@ sub week_of_month
 
 sub time_zone { $_[0]->{tz} }
 
-sub offset { $_[0]->{tz}->offset_for_datetime( $_[0] ) }
-sub _offset_from_local_time { $_[0]->{tz}->offset_for_local_datetime( $_[0] ) }
+sub offset                     { $_[0]->{tz}->offset_for_datetime( $_[0] ) }
+sub _offset_for_local_datetime { $_[0]->{tz}->offset_for_local_datetime( $_[0] ) }
 
 sub is_dst { $_[0]->{tz}->is_dst_for_datetime( $_[0] ) }
 
@@ -714,10 +824,10 @@ sub locale { $_[0]->{locale} }
 sub utc_rd_values { @{ $_[0] }{ 'utc_rd_days', 'utc_rd_secs', 'rd_nanosecs' } }
 
 # NOTE: no nanoseconds, no leap seconds
-sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * 86400 ) + $_[0]->{utc_rd_secs} }
+sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * SECONDS_PER_DAY ) + $_[0]->{utc_rd_secs} }
 
 # NOTE: no nanoseconds, no leap seconds
-sub local_rd_as_seconds { ( $_[0]->{local_rd_days} * 86400 ) + $_[0]->{local_rd_secs} }
+sub local_rd_as_seconds { ( $_[0]->{local_rd_days} * SECONDS_PER_DAY ) + $_[0]->{local_rd_secs} }
 
 # RD 1 is JD 1,721,424.5 - a simple offset
 sub jd
@@ -802,23 +912,22 @@ sub strftime
     foreach my $f (@formats)
     {
         $f =~ s/
-                %{(\w+)}
+                (?:
+                  %{(\w+)}         # method name like %{day_name}
+                  |
+                  %([%a-zA-Z])     # single character specifier like %d
+                  |
+                  %(\d+)N          # special case for %N
+                )
                /
-                $self->can($1) ? $self->$1() : "\%{$1}"
-               /sgex;
-
-        # regex from Date::Format - thanks Graham!
-       $f =~ s/
-                %([%a-zA-Z])
-               /
-                $formats{$1} ? $formats{$1}->($self) : "\%$1"
-               /sgex;
-
-        # %3N
-        $f =~ s/
-                %(\d+)N
-               /
-                $formats{N}->($self, $1)
+                ( $1
+                  ? ( $self->can($1) ? $self->$1() : "\%{$1}" )
+                  : $2
+                  ? ( $formats{$2} ? $formats{$2}->($self) : "\%$2" )
+                  : $3
+                  ? $formats{N}->($self, $3)
+                  : ''  # this won't happen
+                )
                /sgex;
 
         return $f unless wantarray;
@@ -1007,11 +1116,11 @@ sub subtract_datetime_absolute
     my $dt = shift;
 
     my $utc_rd_secs1 = $self->utc_rd_as_seconds;
-    $utc_rd_secs1 += DateTime->_leap_seconds( $self->{utc_rd_days} )
+    $utc_rd_secs1 += DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} )
 	if ! $self->time_zone->is_floating;
 
     my $utc_rd_secs2 = $dt->utc_rd_as_seconds;
-    $utc_rd_secs2 += DateTime->_leap_seconds( $dt->{utc_rd_days} )
+    $utc_rd_secs2 += DateTime->_accumulated_leap_seconds( $dt->{utc_rd_days} )
 	if ! $dt->time_zone->is_floating;
 
     my $seconds = $utc_rd_secs1 - $utc_rd_secs2;
@@ -1147,7 +1256,12 @@ sub add_duration
 
     return $self if $self->is_infinite;
 
-    $self->{local_rd_days} += $deltas{days} if $deltas{days};
+    if ( $deltas{days} )
+    {
+        $self->{local_rd_days} += $deltas{days};
+
+        $self->{utc_year} += int( $deltas{days} / 365 ) + 1;
+    }
 
     if ( $deltas{months} )
     {
@@ -1177,46 +1291,29 @@ sub add_duration
         {
             $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
         }
-    }
 
-    #
-    # In each case below, we fudge the value of utc_year to something
-    # that is _at least_ the correct year, but could be more.  This is
-    # done for the benefit of DateTime::TimeZone, which uses this
-    # value to determine how far into the future it should go when
-    # generating changes for a time zone.  As long as this value is at
-    # least as big as the actual value of the datetime, we will be
-    # able to find the correct offset from UTC.
-    #
+        $self->{utc_year} += int( $deltas{months} / 12 ) + 1;
+    }
 
     if ( $deltas{days} || $deltas{months} )
     {
-        $self->{utc_year} += int( $deltas{months} / 12 ) + 1;
-        $self->{utc_year} += int( $deltas{days} / 365 ) + 1;
+        my $previous_utc_rd_days = $self->{utc_rd_days};
 
         $self->_calc_utc_rd;
-        $self->_calc_local_rd;
+
+        $self->_handle_offset_modifier( $self->second, $previous_utc_rd_days );
     }
 
     if ( $deltas{minutes} )
     {
-        $self->{utc_year} += int( $deltas{minutes} / ( 365 * 1440 ) ) + 1;
-
         $self->{utc_rd_secs} += $deltas{minutes} * 60;
 
         # This intentionally ignores leap seconds
         $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
 
-    # We add seconds to the UTC time because if someone adds 24 hours,
-    # we want this to be _different_ from adding 1 day when crossing
-    # DST boundaries.
     if ( $deltas{seconds} || $deltas{nanoseconds} )
     {
-        $self->{utc_year} += int( $deltas{seconds} / ( 365 * 86400 ) ) + 1;
-        $self->{utc_year} +=
-            int( $deltas{nanoseconds} / ( 365 * 86400 * MAX_NANOSECONDS ) ) + 1;
-
         $self->{utc_rd_secs} += $deltas{seconds};
 
         if ( $deltas{nanoseconds} )
@@ -1225,16 +1322,19 @@ sub add_duration
             $self->_normalize_nanoseconds( $self->{utc_rd_secs}, $self->{rd_nanosecs} );
         }
 
-        # must always normalize seconds, because a nanosecond change
-        # might cause a day change
         $self->_normalize_seconds;
+
+        $self->_handle_offset_modifier( $self->second );
     }
 
-    if ( $deltas{minutes} || $deltas{seconds} || $deltas{nanoseconds})
-    {
-        delete $self->{utc_c};
-        $self->_calc_local_rd;
-    }
+    my $new =
+        (ref $self)->from_object
+            ( object => $self,
+              locale => $self->{locale},
+              ( $self->{formatter} ? ( formatter => $self->{formatter} ) : () ),
+             );
+
+    %$self = %$new;
 
     return $self;
 }
@@ -1346,6 +1446,18 @@ sub set
     return $self;
 }
 
+sub set_year   { $_[0]->set( year => $_[1] ) }
+sub set_month  { $_[0]->set( month => $_[1] ) }
+sub set_day    { $_[0]->set( day => $_[1] ) }
+sub set_hour   { $_[0]->set( hour => $_[1] ) }
+sub set_minute { $_[0]->set( minute => $_[1] ) }
+sub set_second { $_[0]->set( second => $_[1] ) }
+sub set_nanosecond { $_[0]->set( nanosecond => $_[1] ) }
+
+sub set_locale { $_[0]->set( locale => $_[1] ) }
+
+sub set_formatter { $_[0]->{formatter} = $_[1] }
+
 sub truncate
 {
     my $self = shift;
@@ -1400,6 +1512,8 @@ sub set_time_zone
 
     $self->{tz} = ref $tz ? $tz : DateTime::TimeZone->new( name => $tz );
 
+    $self->_handle_offset_modifier( $self->second );
+
     # if it either was or now is floating (but not both)
     if ( $self->{tz}->is_floating xor $was_floating )
     {
@@ -1429,7 +1543,10 @@ sub STORABLE_freeze
     # not used yet, but may be handy in the future.
     $serialized .= "version:$VERSION";
 
-    return $serialized, $self->{locale}, $self->{tz};
+    # Formatter needs to be returned as a reference since it may be
+    # undef or a class name, and Storable will complain if extra
+    # return values aren't refs
+    return $serialized, $self->{locale}, $self->{tz}, \$self->{formatter};
 }
 
 sub STORABLE_thaw
@@ -1440,12 +1557,12 @@ sub STORABLE_thaw
 
     my %serialized = map { split /:/ } split /\|/, $serialized;
 
-    my ( $locale, $tz );
+    my ( $locale, $tz, $formatter );
 
     # more recent code version
     if (@_)
     {
-        ( $locale, $tz ) = @_;
+        ( $locale, $tz, $formatter ) = @_;
     }
     else
     {
@@ -1460,14 +1577,30 @@ sub STORABLE_thaw
 
     delete $serialized{version};
 
-    %$self = %serialized;
-    $self->{tz} = $tz;
-    $self->{locale} = $locale;
+    my $object = bless { utc_vals => [ $serialized{utc_rd_days},
+                                       $serialized{utc_rd_secs},
+                                       $serialized{rd_nanosecs},
+                                     ],
+                         tz       => $tz,
+                       }, 'DateTime::_Thawed';
 
-    $self->_calc_local_rd;
+    my %formatter = defined $$formatter ? ( formatter => $$formatter ) : ();
+
+    my $new = (ref $self)->from_object( object => $object,
+                                        locale => $locale,
+                                        %formatter,
+                                      );
+
+    %$self = %$new;
 
     return $self;
 }
+
+package DateTime::_Thawed;
+
+sub utc_rd_values { @{ $_[0]->{utc_vals} } }
+
+sub time_zone { $_[0]->{tz} }
 
 
 1;
@@ -1550,6 +1683,8 @@ DateTime - A date and time object
 
   $dt->set_time_zone( 'America/Chicago' );
 
+  $dt->set_formatter( $formatter );
+
 =head1 DESCRIPTION
 
 DateTime is a class for the representation of date/time combinations,
@@ -1617,11 +1752,12 @@ character.
 
 =head2 Floating DateTimes
 
-The default time zone for all DateTime objects is the "floating" time
-zone.  This concept comes from the iCal standard.  A floating datetime
-is one which is not anchored to any particular time zone.  In
-addition, floating datetimes do not include leap seconds, since we
-cannot use them without knowing the datetime's time zone.
+The default time zone for new DateTime objects, except where stated
+otherwise, is the "floating" time zone.  This concept comes from the
+iCal standard.  A floating datetime is one which is not anchored to
+any particular time zone.  In addition, floating datetimes do not
+include leap seconds, since we cannot apply them without knowing the
+datetime's time zone.
 
 The results of date math and comparison between a floating datetime
 and one with a real time zone are not really valid, because one
@@ -1645,7 +1781,7 @@ All constructors can die when invalid parameters are given.
 
 This class method accepts parameters for each date and time component:
 "year", "month", "day", "hour", "minute", "second", "nanosecond".
-It also accepts "locale" and "time_zone" parameters.
+It also accepts "locale", "time_zone", and "formatter" parameters.
 
   my $dt = DateTime->new( year   => 1066,
                           month  => 10,
@@ -1695,15 +1831,15 @@ when they match actual leap seconds.
 Invalid parameter types (like an array reference) will cause the
 constructor to die.
 
-DateTime does not check if second values greater than 59 are valid
-based on current leap seconds, and invalid values simply cause an
-overflow.
+The value for seconds may be from 0 to 61, to account for leap
+seconds.  If you give a value greater than 59, DateTime does check to
+see that it really matches a valid leap second.
 
 All of the parameters are optional except for "year".  The "month" and
-"day" parameters both default to 1, while the "hour", "minute", and
+"day" parameters both default to 1, while the "hour", "minute",
 "second", and "nanosecond" parameters all default to 0.
 
-The locale parameter should be a string matching one of the valid
+The "locale" parameter should be a string matching one of the valid
 locales, or a C<DateTime::Locale> object.  See the
 L<DateTime::Locale|DateTime::Locale> documentation for details.
 
@@ -1716,19 +1852,23 @@ C<DateTime::TimeZone> documentation for more details.
 
 The default time zone is "floating".
 
+The "formatter" can be either a scalar or an object, but the class
+specified by the scalar or the object must implement a
+C<format_datetime()> method.
+
 =head4 Ambiguous Local Times
 
 Because of Daylight Saving Time, it is possible to specify a local
 time that is ambiguous.  For example, in the US in 2003, the
-transition from to saving to standard time occurs on October 26, at
-02:00:00 local time.  The local clock changes from 01:59:59 (saving
+transition from to saving to standard time occurred on October 26, at
+02:00:00 local time.  The local clock changed from 01:59:59 (saving
 time) to 01:00:00 (standard time).  This means that the hour from
 01:00:00 through 01:59:59 actually occurs twice, though the UTC time
 continues to move forward.
 
 If you specify an ambiguous time, then the latest UTC time is always
-used, in effect always choosing saving time.  In this case, you can
-simply subtract an hour to the object in order to move to standard time,
+used, in effect always choosing standard time.  In this case, you can
+simply subtract an hour to the object in order to move to saving time,
 for example:
 
   # This object represent 01:30:00 standard time
@@ -1750,7 +1890,7 @@ for example:
 
 Alternately, you could create the object with the UTC time zone, and
 then call the C<set_time_zone()> method to change the time zone.  This
-would allow you to unambiguously specify the datetime.
+is a good way to ensure that the time is not ambiguous.
 
 =head4 Invalid Local Times
 
@@ -1770,7 +1910,7 @@ This may change in future version of this module.
 
 This class method can be used to construct a new DateTime object from
 an epoch time instead of components.  Just as with the C<new()>
-method, it accepts "time_zone" and "locale" parameters.
+method, it accepts "time_zone", "locale", and "formatter" parameters.
 
 If the epoch value is not an integer, the part after the decimal will
 be converted to nanoseconds.  This is done in order to be compatible
@@ -1778,11 +1918,15 @@ with C<Time::HiRes>.  If the floating portion extends past 9 decimal
 places, it will be truncated to nine, so that 1.1234567891 will become
 1 second and 123,456,789 nanoseconds.
 
+By default, the returned object will be in the UTC time zone.
+
 =item * now( ... )
 
 This class method is equivalent to calling C<from_epoch()> with the
 value returned from Perl's C<time()> function.  Just as with the
 C<new()> method, it accepts "time_zone" and "locale" parameters.
+
+By default, the returned object will be in the UTC time zone.
 
 =item * today( ... )
 
@@ -1796,11 +1940,13 @@ This class method can be used to construct a new DateTime object from
 any object that implements the C<utc_rd_values()> method.  All
 C<DateTime::Calendar> modules must implement this method in order to
 provide cross-calendar compatibility.  This method accepts a
-"locale" parameter
+"locale" and "formatter" parameter
 
 If the object passed to this method has a C<time_zone()> method, that
 is used to set the time zone of the newly created C<DateTime.pm>
 object.  Otherwise UTC is used.
+
+By default, the returned object will be in the UTC time zone.
 
 =item * last_day_of_month( ... )
 
@@ -1818,7 +1964,8 @@ leap years.
 
 =item * clone
 
-This object method returns a replica of the given object.
+This object method returns a new object that is replica of the object
+upon which the method is called.
 
 =back
 
@@ -1842,11 +1989,19 @@ before year 1 in this system is year -1, aka "1 BCE".
 
 Returns a string, either "BCE" or "CE", according to the year.
 
+=item * christian_era
+
+Returns a string, either "BC" or "AD", according to the year.
+
 =item * year_with_era
 
 Returns a string containing the year immediately followed by its era.
 The year is the absolute value of C<ce_year()>, so that year 1 is
 "1CE" and year 0 is "1BCE".
+
+=item * year_with_christian_era
+
+Like C<year_with_era()>, but uses the Christian era.
 
 =item * month
 
@@ -2024,8 +2179,8 @@ This returns the C<DateTime::TimeZone> object for the datetime object.
 
 =item * offset
 
-This returns the offset, in seconds, of the datetime object according
-to the time zone.
+This returns the offset from UTC, in seconds, of the datetime object
+according to the time zone.
 
 =item * is_dst
 
@@ -2035,7 +2190,7 @@ currently in Daylight Saving Time or not.
 =item * time_zone_long_name
 
 This is a shortcut for C<< $dt->time_zone->name >>.  It's provided so
-that one can use "%{time_zone_long_name}" inside as a strftime format
+that one can use "%{time_zone_long_name}" as a strftime format
 specifier.
 
 =item * time_zone_short_name
@@ -2146,6 +2301,11 @@ the C<set_time_zone()> method.
 This method performs parameters validation just as is done in the
 C<new()> method.
 
+=item * set_year(), set_month(), set_day(), set_hour(), set_minute(), set_second(), set_nanosecond(), set_locale()
+
+These are shortcuts to calling C<set()> with a single key.  They all
+take a single parameter.
+
 =item * truncate( to => ... )
 
 This method allows you to reset some of the local time components in
@@ -2227,8 +2387,8 @@ the object from which C<$datetime> is subtracted.  For example:
  = 1 month
 
 Note that this duration is not an absolute measure of the amount of
-time between the two datetimes, because the length of a month varies
-by month, as well as the presence of leap seconds.
+time between the two datetimes, because the length of a month varies,,
+as well as due to the presence of leap seconds.
 
 The returned duration may have deltas for months, days, minutes,
 seconds, and nanoseconds.
@@ -2236,11 +2396,10 @@ seconds, and nanoseconds.
 =item * subtract_datetime_absolute( $datetime )
 
 This method returns a new C<DateTime::Duration> object representing
-the difference between the two dates.  The duration object will only
-have deltas for seconds and nanoseconds.  This is the only way to
-accurately measure the absolute amount of time between two datetimes,
-since units larger than a second do not represent a fixed number of
-seconds.
+the difference between the two dates in seconds and nanoseconds.  This
+is the only way to accurately measure the absolute amount of time
+between two datetimes, since units larger than a second do not
+represent a fixed number of seconds.
 
 =item * delta_md( $datetime )
 
@@ -2258,7 +2417,7 @@ minutes and seconds.
 
 The C<delta_md> and C<delta_days> methods truncate the duration so
 that any fractional portion of a day is ignored.  The C<delta_ms>
-method converts any day and months differences to minutes.
+method converts any day and month differences to minutes.
 
 Unlike the subtraction methods, B<these methods always return a
 positive (or zero) duration>.
@@ -2320,16 +2479,16 @@ It's important to have some understanding of how date math is
 implemented in order to effectively use this module and
 C<DateTime::Duration>.
 
-The parts of a duration can be broken down into four parts.  These are
-months, days, minutes, and seconds.  Adding one month to a date is
-different than adding 4 weeks or 28, 29, 30, or 31 days.  Similarly,
-due to DST and leap seconds, adding a day can be different than adding
-86,400 seconds, and adding a minute is not exactly the same as 60
-seconds.
+The parts of a duration can be broken down into five parts.  These are
+months, days, minutes, seconds, and nanoseconds.  Adding one month to
+a date is different than adding 4 weeks or 28, 29, 30, or 31 days.
+Similarly, due to DST and leap seconds, adding a day can be different
+than adding 86,400 seconds, and adding a minute is not exactly the
+same as 60 seconds.
 
 C<DateTime.pm> always adds (or subtracts) days, then months, minutes,
-and then seconds.  If there are any boundary overflows, these are
-normalized at each step.
+and then seconds and nanoseconds.  If there are any boundary
+overflows, these are normalized at each step.
 
 This means that adding one month and one day to February 28, 2003 will
 produce the date April 1, 2003, not March 29, 2003.
@@ -2384,12 +2543,15 @@ Here are the results we get:
   $dt->clone->add( seconds => 60 );
   # 1972-01-01 00:00:29 - 60 seconds later
 
+  $dt->clone->add( seconds => 61 );
+  # 1972-01-01 00:00:30 - 61 seconds later
+
 =head3 Local vs. UTC and 24 hours vs. 1 day
 
 When doing date math, you are changing the I<local> datetime.  This is
 generally the same as changing the UTC datetime, except when a change
 crosses a daylight saving boundary.  The net effect of this is that a
-single day may have more or less than 24.
+single day may have more or less than 24 hours.
 
 Specifically, if you do this:
 
@@ -2433,13 +2595,13 @@ always be desirable, so caveat user!
 Because date math is done on each unit separately, the results of date
 math may not always be what you expect.
 
-Internally, a duration is made up internally of several different
-units, months, days, minutes, seconds, and nanoseconds.
+As we mentioned earlier, internally a duration is made up internally
+of five different units: months, days, minutes, seconds, and
+nanoseconds.
 
-Of those, the only ones that convert or normalize to other units are
-seconds <=> nanoseconds.  For all the others, there is no fixed
-conversion between the two units, because of things like leap seconds,
-DST changes, etc.
+Given any pair of units, we cannot convert between them, except for
+seconds and nanoseconds, because there is no fixed conversion between
+the two units, because of things like leap seconds, DST changes, etc.
 
 Here's an example, based on a question from Mark Fowler to the
 datetime@perl.org list.
@@ -2453,10 +2615,14 @@ have to add it to a datetime to find out, so you could do:
  my $seconds_dur = $later->subtract_datetime_absolute($now);
 
 This returns a duration which only contains seconds and nanoseconds.
+
+If we were add the duration to a different datetime object we might
+get a different number of seconds.
+
 There are other subtract/delta methods in DateTime.pm to generate
 different types of durations.  These methods are
 C<subtract_datetime()>, C<subtract_datetime_absolute()>,
-C<delta_md()>, L<delta_days()>, and C<delta_ms()>.
+C<delta_md()>, C<delta_days()>, and C<delta_ms()>.
 
 =head2 Overloading
 
@@ -2478,6 +2644,29 @@ increment (++) or decrement (--) to do anything useful.
 
 The module also overloads stringification to use the C<iso8601()>
 method.
+
+=head2 Formatters And Stringification
+
+You can optionally specify a "formatter", which is usually a
+DateTime::Format::* object/class, to control how the stringification
+of the DateTime object.
+
+Any of the constructor methods can accept a formatter argument:
+
+  my $formatter = DateTime::Format::Strptime->new(...);
+  my $dt = DateTime->new(year => 2004, formatter => $formatter);
+
+Or, you can set it afterwards:
+
+  $dt->set_formatter($formatter);
+  $formatter = $dt->formatter();
+
+Once you set the formatter, the overloaded stringification method will
+use the formatter. If unspecified, the C<iso8601()> method is used.
+
+A formatter can be handy when you know that in your application you
+want to stringify your DateTime objects into a special format all the
+time, for example to a different language.
 
 =head2 strftime Specifiers
 
@@ -2517,7 +2706,7 @@ The day of the month as a decimal number (range 01 to 31).
 =item * %D
 
 Equivalent to %m/%d/%y.  This is not a good standard format if you
-have want both Americans and Europeans to understand the date!
+want both United States and European people to understand the date!
 
 =item * %e
 
@@ -2532,7 +2721,7 @@ Equivalent to %Y-%m-%d (the ISO 8601 date format)
 
 The ISO 8601 year with century as a decimal number.  The 4-digit year
 corresponding to the ISO week number (see %V).  This has the same
-format and value as %y, except that if the ISO week number belongs to
+format and value as %Y, except that if the ISO week number belongs to
 the previous or next year, that year is used instead. (TZ)
 
 =item * %g
