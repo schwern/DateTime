@@ -4,7 +4,7 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.01_00';
+$VERSION = '0.02';
 
 use Date::Leapyear ();
 use DateTime::Duration;
@@ -24,7 +24,7 @@ use overload ( 'fallback' => 1,
              );
 
 my( @MonthLengths, @LeapYearMonthLengths,
-    @EndofMonthDayOfYear, @EndofMonthDayOfLeapYear,
+    @BeginningOfMonthDayOfYear, @BeginningOfMonthDayOfLeapYear,
   );
 
 {
@@ -158,9 +158,9 @@ sub _calc_components {
     $self->{c}{day_of_week} = ( ( $self->{local_rd_days} + 6) % 7 ) + 1;
 
     {
-        my $d = $self->_end_of_month_day_of_year( $self->{c}{year},
-                                                  $self->{c}{month},
-                                                );
+        my $d = $self->_beginning_of_month_day_of_year( $self->{c}{year},
+                                                        $self->{c}{month},
+                                                      );
         $self->{c}{day_of_year} = $d + $self->{c}{day};
     }
 }
@@ -178,7 +178,7 @@ sub from_epoch {
     # Note, for very large negative values this may give a blatantly
     # wrong answer.
     @p{ qw( second minute hour day month year ) } =
-        ( gmtime( delete $args{epoch} ) )[ 0, 1, 2, 3, 4, 5 ];
+        ( gmtime( delete $args{epoch} ) )[ 0..5 ];
     $p{year} += 1900;
     $p{month}++;
 
@@ -284,8 +284,7 @@ sub _rd2greg {
         # avoid overflow if $d close to maxint
         $yadj = ( $d - 146097 + 306 ) / 146097 + 1;
         $d -= $yadj * 146097 - 306;
-      } elsif ( ( $d += 306 ) <= 0 )
-    {
+    } elsif ( ( $d += 306 ) <= 0 ) {
         $yadj =
           -( -$d / 146097 + 1 );    # avoid ambiguity in C division of negatives
         $d -= $yadj * 146097;
@@ -364,25 +363,23 @@ BEGIN {
     my $x = 0;
     foreach my $length ( @MonthLengths )
     {
-        push @EndofMonthDayOfYear, $x;
+        push @BeginningOfMonthDayOfYear, $x;
         $x += $length;
     }
 
-    @EndofMonthDayOfLeapYear = @EndofMonthDayOfYear;
+    @BeginningOfMonthDayOfLeapYear = @BeginningOfMonthDayOfYear;
 
-    for ( 1 .. 11 ) {
-        $EndofMonthDayOfLeapYear[$_] = $EndofMonthDayOfYear[$_] + 1;
-    }
+    $BeginningOfMonthDayOfLeapYear[$_]++ for 2..11;
 }
 
-sub _end_of_month_day_of_year {
+sub _beginning_of_month_day_of_year {
     shift;
     my ($y, $m) = @_;
     $m--;
     return
         ( Date::Leapyear::isleap($y) ?
-          $EndofMonthDayOfLeapYear[$m] :
-          $EndofMonthDayOfYear[$m]
+          $BeginningOfMonthDayOfLeapYear[$m] :
+          $BeginningOfMonthDayOfYear[$m]
         );
 }
 
@@ -631,11 +628,45 @@ sub subtract_datetime {
     my $self = shift;
     my $dt = shift;
 
-    return
-        DateTime::Duration->new
-            ( days    => $self->{utc_rd_days} - $dt->{utc_rd_days},
-              seconds => $self->{utc_rd_secs} - $dt->{utc_rd_secs},
-            );
+    # We only want a negative duration if $dt > $self.  If just the
+    # seconds are greater (but the days are equal or less), then
+    # returning a negative duration is wrong.
+
+    if ( $self->{utc_rd_days} == $dt->{utc_rd_days} )
+    {
+        return
+            DateTime::Duration->new
+                ( seconds => $self->{utc_rd_secs} - $dt->{utc_rd_secs} );
+    }
+    elsif ( $self->{utc_rd_days} > $dt->{utc_rd_days} &&
+            $self->{utc_rd_secs} < $dt->{utc_rd_secs} )
+    {
+        my $days = $self->{utc_rd_days} - 1;
+        my $secs = $self->{utc_rd_secs} + 86400;
+
+        return
+            DateTime::Duration->new
+                ( days    => $days - $dt->{utc_rd_days},
+                  seconds => $secs - $dt->{utc_rd_secs} );
+    }
+    elsif ( $dt->{utc_rd_days} > $self->{utc_rd_days} &&
+            $dt->{utc_rd_secs} < $self->{utc_rd_secs} )
+    {
+        my $days = $dt->{utc_rd_days} - 1;
+        my $secs = $dt->{utc_rd_secs} + 86400;
+
+        return
+            DateTime::Duration->new
+                ( days    => $self->{utc_rd_days} - $days,
+                  seconds => $self->{utc_rd_secs} - $secs );
+    }
+    else
+    {
+        return
+            DateTime::Duration->new
+                ( days    => $self->{utc_rd_days} - $dt->{utc_rd_days},
+                  seconds => $self->{utc_rd_secs} - $dt->{utc_rd_secs} );
+    }
 }
 
 sub _add_overload {
@@ -843,10 +874,10 @@ DateTime - Reference implementation for Perl DateTime objects
   $is_leap  = $dt->is_leap_year;
 
   # these are localizable, see LANGUAGES section
-  $month_name  = $dt->month_name # January, February
-  $month_abbr  = $dt->month_abbr # Jan, Feb
-  $day_name    = $dt->day_name   # Sunday, Monday
-  $day_abbr    = $dt->day_abbr   # Sun, Mon
+  $month_name  = $dt->month_name # January, February, ...
+  $month_abbr  = $dt->month_abbr # Jan, Feb, ...
+  $day_name    = $dt->day_name   # Monday, Tuesday, ...
+  $day_abbr    = $dt->day_abbr   # Mon, Tue, ...
 
   $epoch_time  = $dt->epoch;     # may return undef for non-epoch times
 
@@ -933,7 +964,7 @@ accepts "language" and "time_zone" parameters.
 
 The behavior of this module when given parameters outside proper
 boundaries (like a minute parameter of 72) is not defined, though
-future versions may be die.
+future versions may die.
 
 Invalid parameter types (like an array reference) will cause the
 constructor to die.

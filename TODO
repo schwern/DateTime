@@ -30,3 +30,6 @@ version that works best is in 5.8.0, and not otherwise available.
 - thorough tests for subtraction & addition overloading
 
 - handle leap seconds
+
+- by default, reject out of bounds datetime values (minute 75) but
+offer a "normalize" parameter that will wrap these.
