@@ -1,3 +1,40 @@
+0.11     2003-05-03
+
+[ IMPROVEMENTS ]
+
+- Moved a little bit of the leap second code to XS, so DateTime.pm may
+be a tiny bit faster.
+
+- Added name() method to DateTime::Language.  Suggested by Rick
+Measham.
+
+- Use XSLoader with Perl 5.6.0+, which according to ancient
+perl5-porters discussions saves some memory.
+
+- Added infinite DateTime objects.  See the DateTime::Infinite docs
+for details.
+
+[ BUG FIXES ]
+
+- The %I and %l strftime formats were formatting hours as 0-11, not
+1-12 as documented.  Patch by Simon Newton.
+
+- A DateTime::Duration object created only with weeks as a parameter
+always was positive.  Fixed by Flavio Glock.
+
+[ BACKWARDS INCOMPATIBILTIES ]
+
+- Because of changes in DateTime::TimeZone 0.13, which this version
+now requires, when a local time is ambiguous, the latest UTC time is
+used, rather than the earliest, as was done previously.
+
+- The Brazilian language module has been renamed as Portugese.
+
+- Removed DateTime::Duration->compare (which I forgot to document
+anyway ;) and comparison overloading for DT::Duration.  There's no
+meaningful way to compare 60 days to 2 months.
+
+
 0.10     2003-04-19 (the "I'm sure the new regime will be spiffy" release)
 
 [IMPROVEMENTS]

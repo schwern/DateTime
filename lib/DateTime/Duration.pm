@@ -5,8 +5,6 @@ use strict;
 use Params::Validate qw( validate SCALAR );
 
 use overload ( fallback => 1,
-               'cmp' => '_compare_overload',
-               '<=>' => '_compare_overload',
                '+'   => '_add_overload',
                '-'   => '_subtract_overload',
                '*'   => '_multiply_overload',
@@ -34,7 +32,7 @@ sub new
 
     # if any component is negative we treat the whole duration as
     # negative
-    if ( grep { $p{$_} < 0 } qw( years months days hours minutes seconds ) )
+    if ( grep { $p{$_} < 0 } qw( years months weeks days hours minutes seconds ) )
     {
         $self->{sign} = -1;
     }
@@ -200,38 +198,6 @@ sub _multiply_overload
     return $new;
 }
 
-sub compare
-{
-    my ( $class, $dur1, $dur2 ) = ref $_[0] ? ( undef, @_ ) : @_;
-
-    my %deltas1 = $dur1->deltas;
-    my %deltas2 = $dur2->deltas;
-
-    foreach ( qw( months days minutes seconds nanoseconds ) )
-    {
-        if ( $deltas1{$_} < $deltas2{$_} )
-        {
-            return -1;
-        }
-        elsif ( $deltas1{$_} > $deltas2{$_} )
-        {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-
-sub _compare_overload
-{
-    my ( $d1, $d2, $rev ) = @_;
-
-    ($d1, $d2) = ($d2, $d1) if $rev;
-
-    return $d1->compare($d2);
-}
-
 
 1;
 
@@ -309,8 +275,8 @@ of these except "end_of_month" are numbers.  If any of the numbers are
 negative, the entire duration is negative.
 
 Internally, years as just treated as 12 months.  Similarly, weeks are
-treated as 7 days, and hours and minutes are both converted into
-seconds.
+treated as 7 days, and hours are converted to minutes.  Seconds and
+nanoseconds are both treated separately.
 
 The "end_of_month" parameter must be either "wrap", "limit", or
 "preserve".  These specify how changes across the end of a month are
@@ -383,8 +349,7 @@ C<add_duration()> or C<subtract_duration()>, as appropriate.
 
 =head2 Overloading
 
-This class overload addition, subtraction, mutiplication and
-comparison.
+This class overload addition, subtraction, and mutiplication.
 
 =head1 SUPPORT
 

@@ -20,9 +20,8 @@ foreach my $set ( [ 'aa', 'aar'                 => 'Afar' ],
                   [ 'nl', 'dut', 'nla'          => 'Dutch' ],
                   [ 'no', 'nor'                 => 'Norwegian' ],
                   [ 'om', 'orm'                 => 'Oromo' ],
-                  # not quite right, but better than failing
-                  [ 'pt', 'por'                 => 'Brazilian' ],
-                  [ 'pt-br', 'por-br'           => 'Brazilian' ],
+                  [ 'pt', 'por','pt-br', 'por-br',
+                                                => 'Portugese' ],
                   [ 'sid'                       => 'Sidama' ],
                   [ 'so', 'som'                 => 'Somali' ],
                   [ 'sv', 'sve', 'swe'          => 'Swedish' ],
@@ -110,6 +109,8 @@ sub _init
         }
     }
 }
+
+sub name { (split /::/, ref $_[0])[-1] }
 
 sub month_names { $_[0]->{month_names} }
 
@@ -236,6 +237,11 @@ globals as needed.  If you need to implement more complex algorithms,
 you can override the following methods:
 
 =over 4
+
+=item * name
+
+Returns the language name, which is the module name without the
+leading "DateTime::Language::" piece.
 
 =item * month_names
 

@@ -6,16 +6,22 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.10';
+    $VERSION = '0.11';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
     {
-        require DynaLoader;
-
-        @DateTime::ISA = 'DynaLoader';
-
-        bootstrap DateTime $DateTime::VERSION;
+        if ( $] >= 5.6.0 )
+        {
+            require XSLoader;
+            XSLoader::load( 'DateTime', $DateTime::VERSION );
+        }
+        else
+        {
+            require DynaLoader;
+            @DateTime::ISA = 'DynaLoader';
+            DateTime->bootstrap( $DateTime::VERSION );
+        }
 
         $loaded = 1;
     }
@@ -43,7 +49,14 @@ use overload ( 'fallback' => 1,
                '+' => '_add_overload',
              );
 
+# Have to load this after overloading is defined, after BEGIN blocks
+# or else weird crashes ensue
+require DateTime::Infinite;
+
 use constant MAX_NANOSECONDS => 1_000_000_000;  # 1E9 = almost 32 bits
+
+use constant INFINITY     =>       100 ** 100 ** 100 ;
+use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 my( @MonthLengths, @LeapYearMonthLengths );
 
@@ -131,52 +144,14 @@ sub new
         $self->{rd_nanosecs} += ( $p{fractional_second} - $int ) * MAX_NANOSECONDS;
     }
 
-    _normalize_nanoseconds( $self->{local_rd_secs}, $self->{rd_nanosecs} );
-
     bless $self, $class;
+
+    $self->_normalize_nanoseconds( $self->{local_rd_secs}, $self->{rd_nanosecs} );
 
     $self->_calc_utc_rd;
     $self->_calc_local_rd;
 
     return $self;
-}
-
-sub _normalize_leap_seconds
-{
-    # args: 0 => days, 1 => seconds
-    my $delta_days;
-
-    # rough adjust - can adjust many days
-    if ( $_[1] < 0 )
-    {
-        $delta_days = int( ($_[1] - 86399) / 86400 );
-    }
-    else
-    {
-        $delta_days = int( $_[1] / 86400 );
-    }
-
-    my $new_day = $_[0] + $delta_days;
-    my $delta_seconds = 86400 * ( $new_day - $_[0] ) +
-                        DateTime::LeapSecond::leap_seconds( $new_day ) -
-                        DateTime::LeapSecond::leap_seconds( $_[0] );
-
-    $_[1] -= $delta_seconds;
-    $_[0] = $new_day;
-
-    # fine adjust - up to 1 day
-    my $day_length = DateTime::LeapSecond::day_length( $new_day );
-    if ( $_[1] >= $day_length )
-    {
-        $_[1] -= $day_length;
-        $_[0]++;
-    }
-    elsif ( $_[1] < 0 )
-    {
-        $day_length = DateTime::LeapSecond::day_length( $new_day - 1 );
-        $_[1] += $day_length;
-        $_[0]--;
-    }
 }
 
 sub _calc_utc_rd
@@ -199,11 +174,49 @@ sub _calc_utc_rd
 
     if ( $self->{tz}->is_floating )
     {
-        _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
     else
     {
-        _normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        $self->_normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+    }
+}
+
+sub _normalize_leap_seconds
+{
+    # args: 0 => days, 1 => seconds
+    my $delta_days;
+
+    # rough adjust - can adjust many days
+    if ( $_[2] < 0 )
+    {
+        $delta_days = int( ($_[2] - 86399) / 86400 );
+    }
+    else
+    {
+        $delta_days = int( $_[2] / 86400 );
+    }
+
+    my $new_day = $_[1] + $delta_days;
+    my $delta_seconds = 86400 * ( $new_day - $_[1] ) +
+                        DateTime::LeapSecond::leap_seconds( $new_day ) -
+                        DateTime::LeapSecond::leap_seconds( $_[1] );
+
+    $_[2] -= $delta_seconds;
+    $_[1] = $new_day;
+
+    # fine adjust - up to 1 day
+    my $day_length = DateTime::LeapSecond::day_length( $new_day );
+    if ( $_[2] >= $day_length )
+    {
+        $_[2] -= $day_length;
+        $_[1]++;
+    }
+    elsif ( $_[2] < 0 )
+    {
+        $day_length = DateTime::LeapSecond::day_length( $new_day - 1 );
+        $_[2] += $day_length;
+        $_[1]--;
     }
 }
 
@@ -225,7 +238,7 @@ sub _calc_local_rd
         $self->{local_rd_days} = $self->{utc_rd_days};
         $self->{local_rd_secs} = $self->{utc_rd_secs} + $self->offset;
 
-        _normalize_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
+        $self->_normalize_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
     }
 
     $self->_calc_local_components;
@@ -240,10 +253,7 @@ sub _calc_local_components
         $self->_rd2ymd( $self->{local_rd_days}, 1 );
 
     @{ $self->{local_c} }{ qw( hour minute second ) } =
-        $self->_seconds_as_components( $self->{local_rd_secs} );
-
-    $self->_adjust_components_for_leap_seconds
-        if $self->{utc_rd_secs} >= 86400;
+        $self->_seconds_as_components( $self->{local_rd_secs}, $self->{utc_rd_secs} );
 }
 
 sub _calc_utc_components
@@ -257,24 +267,6 @@ sub _calc_utc_components
 
     @{ $self->{utc_c} }{ qw( hour minute second ) } =
         $self->_seconds_as_components( $self->{utc_rd_secs} );
-}
-
-sub _adjust_components_for_leap_seconds
-{
-    my $self = shift;
-
-    # we don't have to check 'is_floating' here, because floating
-    # times will never have 86400 seconds.
-    if ( $self->{utc_rd_secs} >= 86400 )
-    {
-        # there is no such thing as +3 or more leap seconds!
-        die "Incorrect UTC RD seconds" if $self->{utc_rd_secs} > 86401;
-
-        $self->{local_c}{second} += $self->{utc_rd_secs} - 86400 + 60;
-        $self->{local_c}{minute}  = 59;
-        $self->{local_c}{hour}--;
-        $self->{local_c}{hour} = 23 if $self->{local_c}{hour} < 0;
-    }
 }
 
 sub _utc_ymd
@@ -593,21 +585,6 @@ sub jd
 
 sub mjd { $_[0]->jd - 2_400_000.5 }
 
-sub _format_nanosecs
-{
-    my $self = shift;
-    my $precision = shift;
-
-    my $ret = sprintf( "%09d", $self->{rd_nanosecs} );
-    return $ret unless $precision;   # default = 9 digits
-
-    # rd_nanosecs might contain a fractional separator
-    my ( $int, $frac ) = split /[.,]/, $self->{rd_nanosecs};
-    $ret .= $frac if $frac;
-
-    return substr( $ret, 0, $precision );
-}
-
 my %formats =
     ( 'a' => sub { $_[0]->day_abbr },
       'A' => sub { $_[0]->day_name },
@@ -622,10 +599,10 @@ my %formats =
       'g' => sub { substr( $_[0]->week_year, -2 ) },
       'G' => sub { $_[0]->week_year },
       'H' => sub { sprintf( '%02d', $_[0]->hour ) },
-      'I' => sub { my $h = $_[0]->hour; $h -= 12 if $h >= 12; sprintf( '%02d', $h ) },
+      'I' => sub { sprintf( '%02d', $_[0]->_hour_12 ) },
       'j' => sub { $_[0]->day_of_year },
       'k' => sub { sprintf( '%2d', $_[0]->hour ) },
-      'l' => sub { my $h = $_[0]->hour; $h -= 12 if $h >= 12; sprintf( '%2d', $h ) },
+      'l' => sub { sprintf( '%2d', $_[0]->_hour_12 ) },
       'm' => sub { sprintf( '%02d', $_[0]->month ) },
       'M' => sub { sprintf( '%02d', $_[0]->minute ) },
       'n' => sub { "\n" }, # should this be OS-sensitive?
@@ -694,6 +671,23 @@ sub strftime
     return @r;
 }
 
+sub _format_nanosecs
+{
+    my $self = shift;
+    my $precision = shift;
+
+    my $ret = sprintf( "%09d", $self->{rd_nanosecs} );
+    return $ret unless $precision;   # default = 9 digits
+
+    # rd_nanosecs might contain a fractional separator
+    my ( $int, $frac ) = split /[.,]/, $self->{rd_nanosecs};
+    $ret .= $frac if $frac;
+
+    return substr( $ret, 0, $precision );
+}
+
+sub _hour_12 { my $h = $_[0]->hour % 12; return $h ? $h : 12 }
+
 # The Time::Local included with 5.00503 doesn't have timegm_nocheck,
 # but its timegm doesn't do boundary checking
 my $sub =
@@ -721,6 +715,9 @@ sub epoch
     return $self->{utc_c}{epoch};
 }
 
+sub is_finite { 1 }
+sub is_infinite { 0 }
+
 # added for benefit of DateTime::TimeZone
 sub utc_year { ($_[0]->_utc_ymd)[0] }
 
@@ -746,9 +743,10 @@ sub subtract_datetime
     {
         return
             DateTime::Duration->new
-                    ( seconds     => $self->{utc_rd_secs} - $dt->{utc_rd_secs},
-                      nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
-                    );
+                ( days        => $self->{utc_rd_days} - $dt->{utc_rd_days},
+                  seconds     => $self->{utc_rd_secs} - $dt->{utc_rd_secs},
+                  nanoseconds => $self->{rd_nanosecs} - $dt->{rd_nanosecs},
+                );
     }
     elsif ( $self->{utc_rd_days} > $dt->{utc_rd_days} &&
             $self->{utc_rd_secs} < $dt->{utc_rd_secs} )
@@ -842,6 +840,27 @@ sub add_duration
 
     my %deltas = $dur->deltas;
 
+    foreach my $val ( values %deltas )
+    {
+        my $inf;
+        if ( $val == INFINITY )
+        {
+            $inf = DateTime::Infinite::Future->new;
+        }
+        elsif ( $val == NEG_INFINITY )
+        {
+            $inf = DateTime::Infinite::Past->new;
+        }
+
+        if ($inf)
+        {
+            %$self = %$inf;
+            bless $self, ref $inf;
+
+            return $self;
+        }
+    }
+
     $self->{local_rd_days} += $deltas{days} if $deltas{days};
 
     if ( $deltas{months} )
@@ -884,7 +903,7 @@ sub add_duration
     {
         $self->{utc_rd_secs} += $deltas{minutes} * 60;
 
-        _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
 
     # We add seconds to the UTC time because if someone adds 24 hours,
@@ -897,7 +916,7 @@ sub add_duration
         if ( $deltas{nanoseconds} )
         {
             $self->{rd_nanosecs} += $deltas{nanoseconds};
-            _normalize_nanoseconds( $self->{utc_rd_secs}, $self->{rd_nanosecs} );
+            $self->_normalize_nanoseconds( $self->{utc_rd_secs}, $self->{rd_nanosecs} );
         }
 
         # must always normalize seconds, because a nanosecond change
@@ -905,11 +924,11 @@ sub add_duration
 
         if ( $self->time_zone->is_floating )
         {
-            _normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+            $self->_normalize_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
         }
         else
         {
-            _normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+            $self->_normalize_leap_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
         }
     }
 
@@ -921,9 +940,6 @@ sub add_duration
 
     return $self;
 }
-
-use constant INFINITY     =>       100 ** 100 ** 100 ;
-use constant NEG_INFINITY => -1 * (100 ** 100 ** 100);
 
 sub _compare_overload
 {
@@ -948,8 +964,10 @@ sub _compare
 
     return undef unless defined $dt2;
 
-    return -1 if ! ref $dt2 && $dt2 == INFINITY;
-    return  1 if ! ref $dt2 && $dt2 == NEG_INFINITY;
+    if ( ! ref $dt2 && ( $dt2 == INFINITY || $dt2 == NEG_INFINITY ) )
+    {
+        return $dt1->{utc_rd_days} <=> $dt2;
+    }
 
     die "Cannot compare a datetime to a regular scalar"
         unless ( UNIVERSAL::can( $dt1, 'utc_rd_values' ) &&
@@ -983,21 +1001,20 @@ sub _compare
     return $dt1->nanosecond <=> $dt2->nanosecond;
 }
 
-
 sub _normalize_nanoseconds
 {
     # seconds, nanoseconds
-    if ( $_[1] < 0 )
+    if ( $_[2] < 0 )
     {
-        my $overflow = 1 + int( $_[1] / MAX_NANOSECONDS );
-        $_[1] += $overflow * MAX_NANOSECONDS;
-        $_[0] -= $overflow;
+        my $overflow = 1 + int( $_[2] / MAX_NANOSECONDS );
+        $_[2] += $overflow * MAX_NANOSECONDS;
+        $_[1] -= $overflow;
     }
-    elsif ( $_[1] >= MAX_NANOSECONDS )
+    elsif ( $_[2] >= MAX_NANOSECONDS )
     {
-        my $overflow = int( $_[1] / MAX_NANOSECONDS );
-        $_[1] -= $overflow * MAX_NANOSECONDS;
-        $_[0] += $overflow;
+        my $overflow = int( $_[2] / MAX_NANOSECONDS );
+        $_[2] -= $overflow * MAX_NANOSECONDS;
+        $_[1] += $overflow;
     }
 }
 
@@ -1058,6 +1075,11 @@ sub truncate
 sub set_time_zone
 {
     my ( $self, $tz ) = @_;
+
+    # This is a bit of a hack but it works because time zone objects
+    # are singletons, and if it doesn't work all we lose is a little
+    # bit of speed.
+    return if $self->{tz} eq $tz;
 
     my $was_floating = $self->{tz}->is_floating;
 
@@ -1173,6 +1195,9 @@ birth of Jesus Christ.
 The calendar represented does have a year 0, and in that way differs
 from how dates are often written using "BCE/CE" or "BC/AD".
 
+For infinite datetimes, please see the
+L<DateTime::Infinite|DateTime::Infinite> module.
+
 =head1 USAGE
 
 =head2 0-based Versus 1-based Numbers
@@ -1281,12 +1306,12 @@ time) to 01:00:00 (standard time).  This means that the hour from
 01:00:00 through 01:59:59 actually occurs twice, though the UTC time
 continues to move forward.
 
-If you specify an ambiguous time, then the earliest UTC time is always
+If you specify an ambiguous time, then the latest UTC time is always
 used, in effect always choosing saving time.  In this case, you can
-simply add an hour to the object in order to move to standard time,
+simply subtract an hour to the object in order to move to standard time,
 for example:
 
-  # This object represent 01:30:00 saving time
+  # This object represent 01:30:00 standard time
   my $dt = DateTime->new( year   => 2003,
                           month  => 10,
                           day    => 26,
@@ -1298,8 +1323,8 @@ for example:
 
   print $dt->hms;  # prints 01:30:00
 
-  # Now the object represent 01:30:00 standard time
-  $dt->add( hours => 1 );
+  # Now the object represent 01:30:00 saving time
+  $dt->subtract( hours => 1 );
 
   print $dt->hms;  # still prints 01:30:00
 
@@ -1541,12 +1566,6 @@ zone, such as "PST" or "GMT".  These names are B<not> definitive, and
 should not be used in any application intended for general use by
 users around the world.
 
-=item * local_rd_as_seconds
-
-Returns the current local Rata Die days and seconds purely as seconds.
-This number ignores any fractional seconds stored in the object,
-as well as leap seconds.
-
 =item * strftime( $format, ... )
 
 This method implements functionality similar to the C<strftime()>
@@ -1575,6 +1594,12 @@ have such a limited range on 32-bit machines.  Additionally, the fact
 that different operating systems have different epoch beginnings is
 another source of possible bugs.
 
+=item * is_finite, is_infinite
+
+These methods allow you to distinguish normal datetime objects from
+infinite ones.  Infinite datetime objects are documented in
+L<DateTime::Infinite|DateTime::Infinite>.
+
 =item * utc_rd_values
 
 Returns the current UTC Rata Die days and seconds as a two element
@@ -1584,7 +1609,12 @@ objects based on the values provided by this object.
 =item * utc_rd_as_seconds
 
 Returns the current UTC Rata Die days and seconds purely as seconds.
-This is useful when you need a single number to represent a date.
+This number ignores any fractional seconds stored in the object,
+as well as leap seconds.
+
+=item * local_rd_as_seconds
+
+Returns the current local Rata Die days and seconds purely as seconds.
 This number ignores any fractional seconds stored in the object,
 as well as leap seconds.
 

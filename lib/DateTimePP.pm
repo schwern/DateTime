@@ -139,32 +139,49 @@ sub _ymd2rd
 sub _seconds_as_components
 {
     shift;
-    my $time = shift;
+    my $secs = shift;
+    my $utc_secs = shift;
 
-    my $hour = int( $time / 3600 );
-    $time -= $hour * 3600;
+    my $hour = int( $secs / 3600 );
+    $secs -= $hour * 3600;
 
-    my $minute = int( $time / 60 );
+    my $minute = int( $secs / 60 );
 
-    my $second = $time - ( $minute * 60 );
+    my $second = $secs - ( $minute * 60 );
+
+    if ( $utc_secs >= 86400 )
+    {
+        # there is no such thing as +3 or more leap seconds!
+        die "Invalid UTC RD seconds value: $utc_secs"
+            if $utc_secs > 86401;
+
+        $second += $utc_secs - 86400 + 60;
+
+        $minute  = 59;
+
+        $hour--;
+        $hour = 23 if $hour < 0;
+    }
 
     return ( $hour, $minute, $second );
 }
 
 sub _normalize_seconds
 {
+    return if grep { $_ == INFINITY() || $_ == NEG_INFINITY() } @_[1,2];
+
     my $adj;
 
-    if ($_[1] < 0)
+    if ($_[2] < 0)
     {
-        $adj = int( ($_[1] - 86399) / 86400 );
+        $adj = int( ($_[2] - 86399) / 86400 );
     }
     else
     {
-        $adj = int( $_[1] / 86400 );
+        $adj = int( $_[2] / 86400 );
     }
 
-    ($_[0] += $adj), ($_[1] -= $adj*86400);
+    ($_[1] += $adj), ($_[2] -= $adj*86400);
 }
 
 sub _end_of_last_month_day_of_year
