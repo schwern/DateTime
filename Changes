@@ -1,3 +1,25 @@
+0.20  2004-02-12
+
+[ IMPROVEMENTS ]
+
+- Tweaked the "How Date Math is Done" section in DateTime.pm to
+provide some more explicit examples.
+
+[ BUG FIXES ]
+
+- If seconds are not negative, DateTime::Duration will try to keep
+nanoseconds >= 0 when normalizing them to seconds, as long as this
+doesn't make seconds become negative.  Suggested by Andrew Pimlott.
+
+- In the datetime subtraction code, there was an off-by-one error in
+the code to determine if one of the datetimes occurred in a minute
+containing a leap second.  This led to the result of the subtraction
+being off by one second.  Patch by Andrew Pimlott.
+
+- A duration's nanoseconds weren't normalized after multiplication.
+Patch by Andrew Pimlott.
+
+
 0.1901  2004-01-07  (the "people care about ancient history?" release)
 
 [ BUG FIXES ]

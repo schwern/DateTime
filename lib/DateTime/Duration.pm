@@ -12,7 +12,7 @@ use overload ( fallback => 1,
                'cmp' => '_compare_overload',
              );
 
-use constant MAX_NANOSECONDS => 1000000000;  # 1E9 = almost 32 bits
+use constant MAX_NANOSECONDS => 1_000_000_000;  # 1E9 = almost 32 bits
 
 sub new
 {
@@ -97,6 +97,9 @@ sub _normalize_nanoseconds
     if ( $self->{nanoseconds} < 0 )
     {
         my $overflow = int( $self->{nanoseconds} / MAX_NANOSECONDS );
+        # try to make nanoseconds positive if seconds are positive,
+        # unless that would make seconds go below 0
+        $overflow++ if $overflow < $self->{seconds};
         $self->{nanoseconds} += $overflow * MAX_NANOSECONDS;
         $self->{seconds} -= $overflow;
     }
@@ -162,7 +165,6 @@ sub add_duration
         $self->{$_} += $dur->{$_};
     }
 
-    # we might have to normalize_nanoseconds before comparing durations
     $self->_normalize_nanoseconds if $self->{nanoseconds};
 
     return $self;
@@ -193,6 +195,8 @@ sub multiply
     {
         $self->{$_} *= $multiplier;
     }
+
+    $self->_normalize_nanoseconds if $self->{nanoseconds};
 
     return $self;
 }

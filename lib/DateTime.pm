@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1901';
+    $VERSION = '0.20';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -908,14 +908,15 @@ sub subtract_datetime
     {
         my ( $utc_rd_days, $utc_rd_secs ) = $smaller->utc_rd_values;
 
-        if ( $utc_rd_secs > 86340 && ! $is_floating )
+        if ( $utc_rd_secs >= 86340 && ! $is_floating )
         {
-            # If the bigger of the two datetimes occurs in the last UTC minute
-            # of the UTC day, then that minute may not be 60 seconds long.  If
-            # we need to subtract a minute from the datetime in order to
-            # adjust the seconds difference to be positive, we need to know
-            # how long that minute was.  If one of the datetimes is floating,
-            # we just assume a minute is 60 seconds.
+            # If the smaller of the two datetimes occurs in the last
+            # UTC minute of the UTC day, then that minute may not be
+            # 60 seconds long.  If we need to subtract a minute from
+            # the larger datetime's minutes count in order to adjust
+            # the seconds difference to be positive, we need to know
+            # how long that minute was.  If one of the datetimes is
+            # floating, we just assume a minute is 60 seconds.
 
             $minute_length = $self->_day_length($utc_rd_days) - 86340;
         }
@@ -1515,7 +1516,9 @@ DateTime - A date and time object
 
 DateTime is a class for the representation of date/time combinations,
 and is part of the Perl DateTime project.  For details on this project
-please see L<http://datetime.perl.org/>.
+please see L<http://datetime.perl.org/>.  The DateTime site has a FAQ
+which may help answer many "how do I do X?" questions.  The FAQ is at
+L<http://datetime.perl.org/faq.html>.
 
 It represents the Gregorian calendar, extended backwards in time
 before its creation (in 1582).  This is sometimes known as the
@@ -2293,6 +2296,19 @@ normalized at each step.
 This means that adding one month and one day to February 28, 2003 will
 produce the date April 1, 2003, not March 29, 2003.
 
+  my $dt = DateTime->new( year => 2003, month => 2, day => 28 );
+
+  $dt->add( months => 1, days => 1 );
+
+  # 2003-04-01 - the result
+
+On the other hand, if we add months first, and then separately add
+days, we end up with March 29, 2003:
+
+  $dt->add( months => 1 )->add( days => 1 );
+
+  # 2003-03-29
+
 =head3 Leap Seconds and Date Math
 
 The presence of leap seconds can cause some strange anomalies in date
@@ -2319,6 +2335,16 @@ during date math.  Given the following datetime:
 we will get different results when adding 1 minute than we get if we
 add 60 seconds.  This is because in this case, the last minute of the
 day, beginning at 23:59:00, actually contains 61 seconds.
+
+Here are the results we get:
+
+  # 1971-12-31 23:59:30 - our starting datetime
+
+  $dt->clone->add( minutes => 1 );
+  # 1972-01-01 00:00:30 - one minute later
+
+  $dt->clone->add( seconds => 60 );
+  # 1972-01-01 00:00:29 - 60 seconds later
 
 =head3 Local vs. UTC and 24 hours vs. 1 day
 
