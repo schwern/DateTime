@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.17';
+    $VERSION = '0.1701';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -346,7 +346,7 @@ sub from_epoch
 
     # Because epoch may come from Time::HiRes
     my $fraction = $p{epoch} - int( $p{epoch} );
-    $args{nanosecond} = $fraction * MAX_NANOSECONDS
+    $args{nanosecond} = int( $fraction * MAX_NANOSECONDS )
         if $fraction;
 
     # Note, for very large negative values this may give a blatantly
@@ -763,6 +763,7 @@ my %formats =
                    my $doy = $_[0]->day_of_year - 1;
                    return int( ( $doy - $dow + 13 ) / 7 - 1 )
                  },
+      'V' => sub { sprintf( '%02d', $_[0]->week_number ) },
       'w' => sub { my $dow = $_[0]->day_of_week;
                    return $dow % 7;
                  },
@@ -1638,7 +1639,9 @@ method, it accepts "time_zone" and "locale" parameters.
 
 If the epoch value is not an integer, the part after the decimal will
 be converted to nanoseconds.  This is done in order to be compatible
-with C<Time::HiRes>.
+with C<Time::HiRes>.  If the floating portion extends past 9 decimal
+places, it will be truncated to nine, so that 1.1234567891 will become
+1 second and 123,456,789 nanoseconds.
 
 =item * now( ... )
 
@@ -2275,6 +2278,10 @@ The abbreviated month name.
 
 The full month name.
 
+=item * %c
+
+The default datetime format for the object's locale.
+
 =item * %C
 
 The century number (year/100) as a 2-digit integer.
@@ -2418,6 +2425,14 @@ also %u.
 
 The week number of the current year as a decimal number, range 00 to
 53, starting with the first Monday as the first day of week 01.
+
+=item * %x
+
+The default date format for the object's locale.
+
+=item * %X
+
+The default time format for the object's locale.
 
 =item * %y
 
