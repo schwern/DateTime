@@ -4,12 +4,16 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 
-use Date::Leapyear ();
+use DynaLoader;
+
+@DateTime::ISA = 'DynaLoader';
+
+bootstrap DateTime $DateTime::VERSION;
+
 use DateTime::Duration;
 use DateTime::TimeZone;
-use DateTime::TimeZone::UTC;
 use Params::Validate qw( validate SCALAR BOOLEAN OBJECT );
 use Time::Local ();
 
@@ -23,9 +27,7 @@ use overload ( 'fallback' => 1,
                '""' => '_stringify',
              );
 
-my( @MonthLengths, @LeapYearMonthLengths,
-    @BeginningOfMonthDayOfYear, @BeginningOfMonthDayOfLeapYear,
-  );
+my( @MonthLengths, @LeapYearMonthLengths );
 
 {
     # I'd rather use Class::Data::Inheritable for this, but there's no
@@ -87,18 +89,15 @@ sub new {
           DateTime::TimeZone->new( name => $args{time_zone} )
         );
 
-    # if user gives us year -10 that's really -9 to us, since we start
-    # at year 0 internally
-    $args{year}++ if $args{year} < 0;
     $self->{local_rd_days} =
         $class->_greg2rd( @args{ qw( year month day ) } );
 
     $self->{local_rd_secs} =
-        $class->time_as_seconds( @args{ qw( hour minute second ) } );
+        $class->_time_as_seconds( @args{ qw( hour minute second ) } );
 
     bless $self, $class;
 
-    $self->_calc_components;
+    $self->_calc_local_components;
     $self->_calc_utc_rd;
 
     return $self;
@@ -106,6 +105,8 @@ sub new {
 
 sub _calc_utc_rd {
     my $self = shift;
+
+    delete $self->{utc_c};
 
     if ( $self->{tz}->is_utc ) {
         $self->{utc_rd_days} = $self->{local_rd_days};
@@ -124,6 +125,8 @@ sub _calc_utc_rd {
 sub _calc_local_rd {
     my $self = shift;
 
+    delete $self->{local_c};
+
     # We must short circuit for UTC times or else we could end up with
     # loops between DateTime.pm and DateTime::TimeZone
     if ( $self->{tz}->is_utc ) {
@@ -136,38 +139,50 @@ sub _calc_local_rd {
         _normalize_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
     }
 
-    $self->_calc_components;
+    $self->_calc_local_components;
 }
 
-sub _calc_components {
+sub _calc_local_components {
     my $self = shift;
 
-    # c stands for components or cache ;)
-    delete $self->{c};
+    @{ $self->{local_c} }{ qw( year month day day_of_week day_of_year ) } =
+        $self->_rd2greg( $self->{local_rd_days}, 1 );
 
-    @{ $self->{c} }{ qw( year month day ) } =
-        $self->_rd2greg( $self->{local_rd_days} );
-
-    my $time = $self->{local_rd_secs};
-
-    @{ $self->{c} }{ qw( hour minute second ) } =
+    @{ $self->{local_c} }{ qw( hour minute second ) } =
         $self->_seconds_as_components( $self->{local_rd_secs} );
+}
 
-    $self->{c}{day_of_week} = ( ( $self->{local_rd_days} + 6) % 7 ) + 1;
+sub _calc_utc_components {
+    my $self = shift;
 
-    {
-        my $d = $self->_beginning_of_month_day_of_year( $self->{c}{year},
-                                                        $self->{c}{month},
-                                                      );
-        $self->{c}{day_of_year} = $d + $self->{c}{day};
-    }
+    @{ $self->{utc_c} }{ qw( year month day ) } =
+        $self->_rd2greg( $self->{utc_rd_days} );
+
+    @{ $self->{utc_c} }{ qw( hour minute second ) } =
+        $self->_seconds_as_components( $self->{utc_rd_secs} );
+}
+
+sub _utc_ymd {
+    my $self = shift;
+
+    $self->_calc_utc_components unless exists $self->{utc_c}{year};
+
+    return @{ $self->{utc_c} }{ qw( year month day ) };
+}
+
+sub _utc_hms {
+    my $self = shift;
+
+    $self->_calc_utc_components unless exists $self->{utc_c}{hour};
+
+    return @{ $self->{utc_c} }{ qw( hour minute second ) };
 }
 
 sub from_epoch {
     my $class = shift;
     my %args = validate( @_,
                          { epoch => { type => SCALAR },
-                           language  => { type => SCALAR | OBJECT, optional => 1 },
+                           language => { type => SCALAR | OBJECT, optional => 1 },
                          }
                        );
 
@@ -221,7 +236,7 @@ sub last_day_of_month {
                       }
                     );
 
-    my $day = ( Date::Leapyear::isleap( $p{year} ) ?
+    my $day = ( DateTime->_is_leap( $p{year} ) ?
                 $LeapYearMonthLengths[ $p{month} - 1 ] :
                 $MonthLengths[ $p{month} - 1 ]
               );
@@ -231,124 +246,6 @@ sub last_day_of_month {
 
 sub clone { bless { %{ $_[0] } }, ref $_[0] }
 
-=begin internal
-
-    ($rd, $secs) = _normalize_seconds( $rd, $secs );
-
-    Corrects seconds that have gone into following or previous day(s).
-    Adjusts the passed days and seconds as well as returning them.
-
-=end internal
-
-=cut
-
-sub _normalize_seconds {
-    my $adj;
-
-    if ($_[1] < 0) {
-        $adj = int( ($_[1]-86399)/86400 );
-    } else {
-        $adj = int( $_[1]/86400 );
-    }
-    ($_[0] += $adj), ($_[1] -= $adj*86400);
-}
-
-sub time_as_seconds {
-    shift;
-    my ( $hour, $min, $sec ) = @_;
-
-    $hour ||= 0;
-    $min ||= 0;
-    $sec ||= 0;
-
-    my $secs = $hour * 3600 + $min * 60 + $sec;
-    return $secs;
-}
-
-sub _rd2greg {
-    shift; # ignore class
-
-    use integer;
-    my $d = shift;
-    my $yadj = 0;
-    my ( $c, $y, $m );
-
-    # add 306 days to make relative to Mar 1, 0; also adjust $d to be
-    # within a range (1..2**28-1) where our calculations will work
-    # with 32bit ints
-    if ( $d > 2**28 - 307 ) {
-
-        # avoid overflow if $d close to maxint
-        $yadj = ( $d - 146097 + 306 ) / 146097 + 1;
-        $d -= $yadj * 146097 - 306;
-    } elsif ( ( $d += 306 ) <= 0 ) {
-        $yadj =
-          -( -$d / 146097 + 1 );    # avoid ambiguity in C division of negatives
-        $d -= $yadj * 146097;
-    }
-
-    $c =
-      ( $d * 4 - 1 ) / 146097;      # calc # of centuries $d is after 29 Feb of yr 0
-    $d -= $c * 146097 / 4;          # (4 centuries = 146097 days)
-    $y = ( $d * 4 - 1 ) / 1461;     # calc number of years into the century,
-    $d -= $y * 1461 / 4;            # again March-based (4 yrs =~ 146[01] days)
-    $m =
-      ( $d * 12 + 1093 ) / 367;     # get the month (3..14 represent March through
-    $d -= ( $m * 367 - 1094 ) / 12; # February of following year)
-    $y += $c * 100 + $yadj * 400;   # get the real year, which is off by
-    ++$y, $m -= 12 if $m > 12;      # one if month is January or February
-
-    return ( $y, $m, $d );
-}
-
-sub _greg2rd {
-    shift; # ignore class
-
-    use integer;
-    my ( $y, $m, $d ) = @_;
-    my $adj;
-
-    # make month in range 3..14 (treat Jan & Feb as months 13..14 of
-    # prev year)
-    if ( $m <= 2 ) {
-        $y -= ( $adj = ( 14 - $m ) / 12 );
-        $m += 12 * $adj;
-    } elsif ( $m > 14 ) {
-        $y += ( $adj = ( $m - 3 ) / 12 );
-        $m -= 12 * $adj;
-    }
-
-    # make year positive (oh, for a use integer 'sane_div'!)
-    if ( $y < 0 ) {
-        $d -= 146097 * ( $adj = ( 399 - $y ) / 400 );
-        $y += 400 * $adj;
-    }
-
-    # add: day of month, days of previous 0-11 month period that began
-    # w/March, days of previous 0-399 year period that began w/March
-    # of a 400-multiple year), days of any 400-year periods before
-    # that, and 306 days to adjust from Mar 1, year 0-relative to Jan
-    # 1, year 1-relative (whew)
-
-    $d += ( $m * 367 - 1094 ) / 12 + $y % 100 * 1461 / 4 +
-      ( $y / 100 * 36524 + $y / 400 ) - 306;
-}
-
-sub _seconds_as_components {
-    shift;
-    my $time = shift;
-
-    my $hour = int( $time / 3600 );
-    $time -= $hour * 3600;
-
-    my $minute = int( $time / 60 );
-
-    my $second = $time - ( $minute * 60 );
-
-    return ( $hour, $minute, $second );
-}
-
-
 BEGIN {
 
     @MonthLengths =
@@ -356,37 +253,14 @@ BEGIN {
 
     @LeapYearMonthLengths = @MonthLengths;
     $LeapYearMonthLengths[1]++;
-
-    my $x = 0;
-    foreach my $length ( @MonthLengths )
-    {
-        push @BeginningOfMonthDayOfYear, $x;
-        $x += $length;
-    }
-
-    @BeginningOfMonthDayOfLeapYear = @BeginningOfMonthDayOfYear;
-
-    $BeginningOfMonthDayOfLeapYear[$_]++ for 2..11;
 }
 
-sub _beginning_of_month_day_of_year {
-    shift;
-    my ($y, $m) = @_;
-    $m--;
-    return
-        ( Date::Leapyear::isleap($y) ?
-          $BeginningOfMonthDayOfLeapYear[$m] :
-          $BeginningOfMonthDayOfYear[$m]
-        );
-}
+sub year    { $_[0]->{local_c}{year} }
 
-sub year    { $_[0]->{c}{year} <= 0 ? $_[0]->{c}{year} - 1 : $_[0]->{c}{year} }
-sub year_0  { $_[0]->{c}{year} }
-
-sub month   { $_[0]->{c}{month} }
+sub month   { $_[0]->{local_c}{month} }
 *mon = \&month;
 
-sub month_0 { $_[0]->{c}{month} - 1 };
+sub month_0 { $_[0]->{local_c}{month} - 1 };
 *mon_0 = \&month_0;
 
 sub month_name {
@@ -399,19 +273,19 @@ sub month_abbr {
     return $self->{language}->month_abbreviation($self);
 }
 
-sub day_of_month { $_[0]->{c}{day} }
+sub day_of_month { $_[0]->{local_c}{day} }
 *day  = \&day_of_month;
 *mday = \&day_of_month;
 
-sub day_of_month_0 { $_[0]->{c}{day} - 1 }
+sub day_of_month_0 { $_[0]->{local_c}{day} - 1 }
 *day_0  = \&day_of_month_0;
 *mday_0 = \&day_of_month_0;
 
-sub day_of_week { $_[0]->{c}{day_of_week} }
+sub day_of_week { $_[0]->{local_c}{day_of_week} }
 *wday = \&day_of_week;
 *dow  = \&day_of_week;
 
-sub day_of_week_0 { $_[0]->{c}{day_of_week} - 1 }
+sub day_of_week_0 { $_[0]->{local_c}{day_of_week} - 1 }
 *wday_0 = \&day_of_week_0;
 *dow_0  = \&day_of_week_0;
 
@@ -425,10 +299,10 @@ sub day_abbr {
     return $self->{language}->day_abbreviation($self);
 }
 
-sub day_of_year { $_[0]->{c}{day_of_year} }
+sub day_of_year { $_[0]->{local_c}{day_of_year} }
 *doy = \&day_of_year;
 
-sub day_of_year_0 { $_[0]->{c}{day_of_year} - 1 }
+sub day_of_year_0 { $_[0]->{local_c}{day_of_year} - 1 }
 *doy_0 = \&day_of_year_0;
 
 sub ymd {
@@ -436,8 +310,8 @@ sub ymd {
     $sep = '-' unless defined $sep;
     return sprintf( "%0.4d%s%0.2d%s%0.2d",
                     $self->year, $sep,
-                    $self->{c}{month}, $sep,
-                    $self->{c}{day} );
+                    $self->{local_c}{month}, $sep,
+                    $self->{local_c}{day} );
 }
 *date = \&ymd;
 
@@ -445,8 +319,8 @@ sub mdy {
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
-                    $self->{c}{month}, $sep,
-                    $self->{c}{day}, $sep,
+                    $self->{local_c}{month}, $sep,
+                    $self->{local_c}{day}, $sep,
                     $self->year );
 }
 
@@ -454,26 +328,26 @@ sub dmy {
     my ( $self, $sep ) = @_;
     $sep = '-' unless defined $sep;
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
-                    $self->{c}{day}, $sep,
-                    $self->{c}{month}, $sep,
+                    $self->{local_c}{day}, $sep,
+                    $self->{local_c}{month}, $sep,
                     $self->year );
 }
 
-sub hour   { $_[0]->{c}{hour} }
+sub hour   { $_[0]->{local_c}{hour} }
 
-sub minute { $_[0]->{c}{minute} }
+sub minute { $_[0]->{local_c}{minute} }
 *min = \&minute;
 
-sub second { $_[0]->{c}{second} }
+sub second { $_[0]->{local_c}{second} }
 *sec = \&second;
 
 sub hms {
     my ( $self, $sep ) = @_;
     $sep = ':' unless defined $sep;
     return sprintf( "%0.2d%s%0.2d%s%0.2d",
-                    $self->{c}{hour}, $sep,
-                    $self->{c}{minute}, $sep,
-                    $self->{c}{second} );
+                    $self->{local_c}{hour}, $sep,
+                    $self->{local_c}{minute}, $sep,
+                    $self->{local_c}{second} );
 }
 # don't want to override CORE::time()
 *DateTime::time = \&hms;
@@ -481,34 +355,30 @@ sub hms {
 sub iso8601 {
     my $self = shift;
 
-    # ISO 8601 uses astronomical years
-    my $ymd = sprintf( '%0.4d-%0.2d-%0.2d',
-                       @{ $self->{c} }{ 'year', 'month', 'day' } );
-
-    return join 'T', $ymd, $self->hms(':');
+    return join 'T', $self->ymd, $self->hms(':');
 }
 *datetime = \&iso8601;
 
-sub is_leap_year { Date::Leapyear::isleap( $_[0]->year ) ? 1 : 0 }
+sub is_leap_year { $_[0]->_is_leap( $_[0]->year ) }
 
 sub week
 {
     my $self = shift;
 
-    unless ( defined $self->{c}{week_year} )
+    unless ( defined $self->{local_c}{week_year} )
     {
         my $mid_week = $self->clone;
         # Thursday if Sunday is the first day of the week
         $mid_week->add( days => 4 - ( ( $self->{local_rd_days} % 7 ) + 1 ) );
-        $self->{c}{week_year} = $mid_week->year;
+        $self->{local_c}{week_year} = $mid_week->year;
 
-        my $jan_four = $self->_greg2rd( $self->{c}{week_year}, 1, 4 );
+        my $jan_four = $self->_greg2rd( $self->{local_c}{week_year}, 1, 4 );
         my $first_week = $jan_four - ( $jan_four % 7 );
-        $self->{c}{week_number} =
+        $self->{local_c}{week_number} =
             int( ( $self->{local_rd_days} - $first_week ) / 7 ) + 1;
     }
 
-    return @{ $self->{c} }{ 'week_year', 'week_number' }
+    return @{ $self->{local_c} }{ 'week_year', 'week_number' }
 }
 
 sub week_year   { ($_[0]->week)[0] }
@@ -529,6 +399,17 @@ sub utc_rd_values { @{ $_[0] }{ 'utc_rd_days', 'utc_rd_secs' } }
 
 sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * 86400 )   + $_[0]->{utc_rd_secs} }
 sub local_rd_as_seconds { ( $_[0]->{local_rd_days} * 86400 ) + $_[0]->{local_rd_secs} }
+
+# RD 1 is JD 1,721,424.5 - a simple offset
+sub jd {
+    my $self = shift;
+
+    my $jd = $self->{utc_rd_days} + 1_721_424.5;
+
+    return $jd + ( $self->{utc_rd_secs} / 86400 );
+}
+
+sub mjd { $_[0]->jd - + 2_400_000.5 }
 
 my %formats =
     ( 'a' => sub { $_[0]->day_abbr },
@@ -610,20 +491,24 @@ sub strftime {
 sub epoch {
     my $self = shift;
 
-    return $self->{c}{epoch} if exists $self->{c}{epoch};
+    return $self->{utc_c}{epoch}
+        if exists $self->{utc_c}{epoch};
 
-    my ( $year, $month, $day )  = $self->_rd2greg( $self->{utc_rd_days} );
-    my @hms = $self->_seconds_as_components( $self->{utc_rd_secs} );
+    my ( $year, $month, $day ) = $self->_utc_ymd;
+    my @hms = $self->_utc_hms;
 
-    $self->{c}{epoch} =
+    $self->{utc_c}{epoch} =
         eval { Time::Local::timegm( ( reverse @hms ),
                                     $day,
                                     $month - 1,
                                     $year - 1900,
                                   ) };
 
-    return $self->{c}{epoch};
+    return $self->{utc_c}{epoch};
 }
+
+# added for benefit of DateTime::TimeZone
+sub utc_year { ($_[0]->_utc_ymd)[0] }
 
 sub add { shift->add_duration( DateTime::Duration->new(@_) ) }
 
@@ -709,6 +594,8 @@ sub _subtract_overload {
 
 sub add_duration {
     my ( $self, $dur ) = @_;
+
+    delete $self->{utc_c};
 
     my %deltas = $dur->deltas;
 
@@ -841,7 +728,7 @@ DateTime - Reference implementation for Perl DateTime objects
   $dt = DateTime->from_epoch( epoch => $epoch );
   $dt = DateTime->now; # same as ( epoch => time() )
 
-  $year   = $dt->year;          # there is no year 0
+  $year   = $dt->year;
   $month  = $dt->month;         # 1-12
   # also $dt->mon
 
@@ -1037,8 +924,7 @@ month/week/year, are 1-based.  Any method that is one based also has
 an equivalent 0-based method ending in "_0".  So for example, this
 class provides both C<day_of_week()> and C<day_of_week_0()> methods.
 
-The C<year_0> method treats the year -1 BCE as year 0, as is
-conventional in astronomy.
+There is no year_0 method.
 
 The C<day_of_week_0> method still treats Monday as the first day of
 the week.
@@ -1055,8 +941,7 @@ about an object.
 
 =item * year
 
-Returns the year.  There is no year 0.  The year before year 1 is year
--1.
+Returns the year.  The year before year 1 is year -1.
 
 =item * month
 
@@ -1132,9 +1017,6 @@ This method is equivalent to:
 
   $dt->ymd('-') . 'T' . $dt->hms(':')
 
-I<except> that the year is the year as returned by the C<year_0()>
-method.
-
 =item * is_leap_year
 
 This method returns a true or false indicating whether or not the
@@ -1164,6 +1046,12 @@ Returns the year of the week.
 =item * week_number
 
 Returns the week of the year, from 1..53.
+
+=item * jd, mjd
+
+These return the Julian Day and Modified Julian Day, respectively.
+The value returned is a floating point number, the fractional portion
+of the number represents the time portion of the datetime.
 
 =item * time_zone
 
@@ -1271,7 +1159,7 @@ Yes, now we can know "ni3 na1 bian1 ji3dian2?"
 =item * add_duration( $duration_object )
 
 This method adds a C<DateTime::Duration> to the current datetime.  See
-the L<DateTime::TimeZone|DateTime::TimeZone> docs for more detais.
+the L<DateTime::Duration|DateTime::Duration> docs for more detais.
 
 =item * add( DateTime::Duration->new parameters )
 

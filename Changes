@@ -1,3 +1,13 @@
+0.06     2003-02-16
+
+- The docs said that there was no year 0 in the Gregorian calendar,
+but that was wrong.  The year() method can now return 0.  The year_0()
+method has been removed.
+
+- Added jd() and mjd() methods.
+
+- Re-implemented some of the core code in XS for speed.
+
 0.05     2003-02-13
 
 - Fix handling and reporting of epoch times.  Epoch times are, by
@@ -5,7 +15,7 @@ definition, UTC times, so any time created from an epoch should always
 have its time zone set to "UTC".  This can be changed after the object
 is created.  Similarly, value returned by the epoch() method needs to
 be based on the object's UTC time, not it's local time.  Bug reported
-by Kellan.
+by Kellan Elliott-McCrea.
 
 - Change year_0 so that -1 BCE is 0, not 1 CE.  This corresponds to
 astronomical years.

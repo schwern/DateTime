@@ -5,13 +5,6 @@ TODO list for Perl module DateTime
 - more tests for other languages
 
 
-* More methods
-
-- add gmtime and localtime methods, perhaps?
-
-- jd/mjd methods?
-
-
 * Other
 
 - sub-second resolution - at least microseconds (cooperate with
@@ -36,3 +29,9 @@ offer a "normalize" parameter that will wrap these.
 
 - make languages available via ISO codes as well as English name.
 Eric Cholet.
+
+
+NOTE TO FUTURE DEVELOPERS:
+
+Attempting to implement add_duration in XS actually seemed to slow
+date math operations down.  Sad but true.
