@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1703';
+    $VERSION = '0.1704';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -794,14 +794,14 @@ sub strftime
         $f =~ s/
                 %{(\w+)}
                /
-                $self->$1() if $self->can($1);
+                $self->can($1) ? $self->$1() : "\%{$1}"
                /sgex;
 
         # regex from Date::Format - thanks Graham!
        $f =~ s/
                 %([%a-zA-Z])
                /
-                $formats{$1} ? $formats{$1}->($self) : $1
+                $formats{$1} ? $formats{$1}->($self) : "\%$1"
                /sgex;
 
         # %3N
@@ -912,10 +912,15 @@ sub subtract_datetime
     my ( $months, $days, $minutes, $seconds, $nanoseconds ) =
         $self->_adjust_for_positive_difference
             ( $bigger->year * 12 + $bigger->month, $smaller->year * 12 + $smaller->month,
-              $bigger->day, $smaller->day,
+
+              ($bigger->utc_rd_values)[0], ($smaller->utc_rd_values)[0],
+
               $bigger->hour * 60 + $bigger->minute, $smaller->hour * 60 + $smaller->minute,
+
 	      $bigger->second, $smaller->second,
+
 	      $bigger->nanosecond, $smaller->nanosecond,
+
 	      $minute_length,
 	      $self->_month_length( $bigger->year, $bigger->month ),
             );
@@ -1499,9 +1504,10 @@ There is no C<quarter_0()> method.
 =head2 Error Handling
 
 Some errors may cause this module to die with an error string.  This
-can only happen when calling constructor methods or methods that
-change the object, such as C<set()>.  Methods that retrieve
-information about the object, such as C<strftime()>, will never die.
+can only happen when calling constructor methods, methods that change
+the object, such as C<set()>, or methods that take parameters.
+Methods that retrieve information about the object, such as C<year()>
+or C<epoch()>, will never die.
 
 =head2 Locales
 
@@ -1570,6 +1576,8 @@ when they match actual leap seconds.
 =item * nanosecond
 
 >= 0
+
+=back
 
 =back
 
@@ -1644,6 +1652,8 @@ no 02:00:00 through 02:59:59 on April 6!
 
 Attempting to create an invalid time currently causes a fatal error.
 This may change in future version of this module.
+
+=over 4
 
 =item * from_epoch( epoch => $epoch, ... )
 
@@ -1932,6 +1942,9 @@ return multiple scalars, one for each format string.
 
 See the L<strftime Specifiers|/strftime Specifiers> section for a list
 of all possible format specifiers.
+
+If you give a format specifier that doesn't exist, then it is simply
+treated as text.
 
 =item * epoch
 
