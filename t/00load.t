@@ -1,4 +1,4 @@
-# $Header: /cvsroot/perl-date-time/modules/DateTime.pm/t/00load.t,v 1.1.1.1 2003/01/11 21:38:24 autarch Exp $
+#!/usr/bin/perl -w
 
 use Test::More;
 

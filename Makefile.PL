@@ -49,7 +49,7 @@ EOF
 
             close F;
 
-            $test = "BEGIN { \$ENV{PERL_DATETIME_PP} = 1 }\n\n$test";
+            $test = "#!/usr/bin/perl -w\n\nBEGIN { \$ENV{PERL_DATETIME_PP} = 1 }\n\n$test";
 
             my $new_file = File::Spec->catfile( 't', "zz_$file" );
             open F, ">$new_file" or die "Cannot write $new_file: $!";
@@ -74,7 +74,7 @@ sub write_makefile
                    CONFIGURE    => \&init,
 
                    PREREQ_PM    => { 'Class::Factory::Util' => 1.3,
-                                     'DateTime::TimeZone' => 0.13,
+                                     'DateTime::TimeZone' => 0.15,
                                      'Params::Validate' => 0.52,
                                      'Test::More'  => 0,
                                      'Time::Local' => 0,
