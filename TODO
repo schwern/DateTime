@@ -1,0 +1,32 @@
+TODO list for Perl module DateTime
+
+* strftime method
+
+- more tests for other languages
+
+
+* More methods
+
+- add gmtime and localtime methods, perhaps?
+
+- jd/mjd methods?
+
+
+* Other
+
+- sub-second resolution - at least microseconds (cooperate with
+Time::HiRes), but is micro small enough?
+
+- overloading for DateTime::Duration: multiplication (duration * int),
+division? (duration / int).
+
+- document RD days/seconds(/nanosecs?) in a separate document that
+will be the reference for DateTime.pm internals, as well as being
+useful for other calendar implementors.
+
+- Time::Local is now a core module, with no CPAN existence.  But the
+version that works best is in 5.8.0, and not otherwise available.
+
+- thorough tests for subtraction & addition overloading
+
+- handle leap seconds
