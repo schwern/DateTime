@@ -1,9 +1,24 @@
-0.15   2003-07-29
+0.1501  2003-07-30
+
+[ BUG FIXES ]
+
+- Fixed the from_object() method to set the returned object's time
+zone to the floating time zone if the source object did not have a
+time zone, as specified in the docs.  Previously, the returned
+object's time zone was UTC.  Patch by Eugene van der Pjill.
+
+- For this release, at least, the module always uses Dynaloader.  This
+is in order to see if this fixes a problem on Solaris where the
+install library version of the DateTime .so file is loaded instead of
+the newly compiled version in the blib directory.
+
+
+0.15    2003-07-29
 
 [ IMPROVEMENTS ]
 
-- The utc_rd_values() method now returns nanoseconds in addition, Rata
-Die days and minutes.  Based on a patch by Joshua Hoblitt.
+- The utc_rd_values() method now returns nanoseconds in addition to
+Rata Die days and seconds.  Based on a patch by Joshua Hoblitt.
 
 - The from_object() method expects objects to return the same values
 from their utc_rd_values() methods.  Based on a patch by Joshua Hoblitt.

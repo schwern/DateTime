@@ -6,22 +6,22 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.15';
+    $VERSION = '0.1501';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
     {
-        if ( $] >= 5.006 )
-        {
-            require XSLoader;
-            XSLoader::load( 'DateTime', $DateTime::VERSION );
-        }
-        else
-        {
+#        if ( $] >= 5.006 )
+#        {
+#            require XSLoader;
+#            XSLoader::load( 'DateTime', $DateTime::VERSION );
+#        }
+#        else
+#        {
             require DynaLoader;
             @DateTime::ISA = 'DynaLoader';
             DateTime->bootstrap( $DateTime::VERSION );
-        }
+#        }
 
         $loaded = 1;
     }
@@ -429,8 +429,14 @@ sub from_object
 
     my $new = $class->new( %p, %args, time_zone => 'UTC' );
 
-    $new->set_time_zone( $object->time_zone )
-        if $object->can('time_zone');
+    if ( $object->can('time_zone') )
+    {
+        $new->set_time_zone( $object->time_zone );
+    }
+    else
+    {
+        $new->set_time_zone( 'floating' );
+    }
 
     return $new;
 }
