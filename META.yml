@@ -1,7 +1,7 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         DateTime
-version:      0.1705
+version:      0.18
 version_from: lib/DateTime.pm
 installdirs:  site
 requires:
@@ -9,6 +9,7 @@ requires:
     DateTime::Locale:              0.03
     DateTime::TimeZone:            0.25
     Params::Validate:              0.52
+    Pod::Man:                      1.14
     Test::More:                    0
     Time::Local:                   1.04
 

@@ -14,7 +14,7 @@ for (@ARGV)
     /^--xs/ and $no_xs = 0;
 }
 
-unless ($no_xs)
+unless (defined $no_xs)
 {
     print "Testing if you have a C compiler\n";
 
@@ -82,11 +82,12 @@ sub write_makefile
                    CONFIGURE    => \&init,
 
                    PREREQ_PM    => { 'Class::Factory::Util' => 1.3,
+                                     'DateTime::Locale' => 0.03,
                                      'DateTime::TimeZone' => 0.25,
                                      'Params::Validate' => 0.52,
+                                     'Pod::Man'    => 1.14,
                                      'Test::More'  => 0,
                                      'Time::Local' => 1.04,
-                                     'DateTime::Locale' => 0.03,
                                    },
                  );
 }

@@ -6,7 +6,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.1705';
+    $VERSION = '0.18';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -1025,6 +1025,44 @@ sub subtract_datetime_absolute
             );
 }
 
+sub delta_md
+{
+    my $self = shift;
+    my $dt = shift;
+
+    my $dur = $self->subtract_datetime($dt);
+
+    return DateTime::Duration->new( months => $dur->delta_months,
+                                    days   => $dur->delta_days );
+}
+
+sub delta_days { DateTime::Duration->new( days => int( $_[0]->jd - $_[1]->jd ) ) }
+
+sub delta_ms
+{
+    my $self = shift;
+    my $dt = shift;
+
+    my $days = abs( int( $self->jd - $dt->jd ) );
+
+    my $dur = $self->subtract_datetime($dt);
+
+    my %p;
+    $p{hours}   = $dur->hours + ( $days * 24 );
+    $p{minutes} = $dur->minutes;
+    $p{seconds} = $dur->seconds;
+
+    if ( $self < $dt )
+    {
+        for ( qw( hours minutes seconds ) )
+        {
+            $p{$_} *= -1 if $p{$_};
+        }
+    }
+
+    return DateTime::Duration->new(%p);
+}
+
 sub _add_overload
 {
     my ( $dt, $dur, $reversed ) = @_;
@@ -1411,45 +1449,45 @@ DateTime - A date and time object
   $dt = DateTime->now; # same as ( epoch => time() )
 
   $year   = $dt->year;
-  $month  = $dt->month;         # 1-12 - also mon
+  $month  = $dt->month;          # 1-12 - also mon
 
-  $day    = $dt->day;           # 1-31 - also day_of_month, mday
+  $day    = $dt->day;            # 1-31 - also day_of_month, mday
 
-  $dow    = $dt->day_of_week;   # 1-7 (Monday is 1) - also dow, wday
+  $dow    = $dt->day_of_week;    # 1-7 (Monday is 1) - also dow, wday
 
-  $hour   = $dt->hour;          # 0-23
-  $minute = $dt->minute;        # 0-59 - also min
+  $hour   = $dt->hour;           # 0-23
+  $minute = $dt->minute;         # 0-59 - also min
 
-  $second = $dt->second;        # 0-61 (leap seconds!) - also sec
+  $second = $dt->second;         # 0-61 (leap seconds!) - also sec
 
-  $doy    = $dt->day_of_year    # 1-366 (leap years) - also doy
+  $doy    = $dt->day_of_year;    # 1-366 (leap years) - also doy
 
-  $doq    = $dt->day_of_quarter # 1.. - also doq
+  $doq    = $dt->day_of_quarter; # 1.. - also doq
 
-  $qtr    = $dt->quarter        # 1-4
+  $qtr    = $dt->quarter;        # 1-4
 
   # all of the start-at-1 methods above have correponding start-at-0
   # methods, such as $dt->day_of_month_0, $dt->month_0 and so on
 
-  $ymd    = $dt->ymd            # 2002-12-06
-  $ymd    = $dt->ymd('/')       # 2002/12/06 - also date
+  $ymd    = $dt->ymd;           # 2002-12-06
+  $ymd    = $dt->ymd('/');      # 2002/12/06 - also date
 
-  $mdy    = $dt->mdy            # 12-06-2002
-  $mdy    = $dt->mdy('/')       # 12/06/2002
+  $mdy    = $dt->mdy;           # 12-06-2002
+  $mdy    = $dt->mdy('/');      # 12/06/2002
 
-  $dmy    = $dt->dmy            # 06-12-2002
-  $dmy    = $dt->dmy('/')       # 06/12/2002
+  $dmy    = $dt->dmy;           # 06-12-2002
+  $dmy    = $dt->dmy('/');      # 06/12/2002
 
-  $hms    = $dt->hms            # 14:02:29
-  $hms    = $dt->hms('!')       # 14!02!29 - also time
+  $hms    = $dt->hms;           # 14:02:29
+  $hms    = $dt->hms('!');      # 14!02!29 - also time
 
   $is_leap  = $dt->is_leap_year;
 
   # these are localizable, see Locales section
-  $month_name  = $dt->month_name # January, February, ...
-  $month_abbr  = $dt->month_abbr # Jan, Feb, ...
-  $day_name    = $dt->day_name   # Monday, Tuesday, ...
-  $day_abbr    = $dt->day_abbr   # Mon, Tue, ...
+  $month_name  = $dt->month_name; # January, February, ...
+  $month_abbr  = $dt->month_abbr; # Jan, Feb, ...
+  $day_name    = $dt->day_name;   # Monday, Tuesday, ...
+  $day_abbr    = $dt->day_abbr;   # Mon, Tue, ...
 
   $epoch_time  = $dt->epoch;
   # may return undef if the datetime is outside the range that is
@@ -1876,7 +1914,7 @@ datetime object is in a leap year.
 
 =item * week
 
- ($week_year, $week_number) = $dt->week
+ ($week_year, $week_number) = $dt->week;
 
 Returns information about the calendar week which contains this
 datetime object. The values returned by this method are also available
@@ -1998,7 +2036,7 @@ Returns the current UTC Rata Die days and seconds purely as seconds.
 This number ignores any fractional seconds stored in the object,
 as well as leap seconds.
 
-=item * local_rd_as_seconds
+=item * local_rd_as_seconds - deprecated
 
 Returns the current local Rata Die days and seconds purely as seconds.
 This number ignores any fractional seconds stored in the object,
@@ -2119,8 +2157,8 @@ Note that this duration is not an absolute measure of the amount of
 time between the two datetimes, because the length of a month varies
 by month, as well as the presence of leap seconds.
 
-The returned duration may deltas for months, days, minutes, seconds,
-and nanoseconds.
+The returned duration may have deltas for months, days, minutes,
+seconds, and nanoseconds.
 
 =item * subtract_datetime_absolute( $datetime )
 
@@ -2130,6 +2168,27 @@ have deltas for seconds and nanoseconds.  This is the only way to
 accurately measure the absolute amount of time between two datetimes,
 since units larger than a second do not represent a fixed number of
 seconds.
+
+=item * delta_md( $datetime )
+
+=item * delta_days( $datetime )
+
+=item * delta_ms( $datetime )
+
+Each of these methods returns a new C<DateTime::Duration> object
+representing some portion of the difference between two datetimes.
+The C<delta_md()> method returns a duration which contains only the
+month and day portions of the duration is represented.  The
+C<delta_days()> method returns a duration which contains only days,
+and the C<delta_ms()> method returns a duration which contains only
+minutes and seconds.
+
+The C<delta_md> and C<delta_days> methods truncate the duration so
+that any fractional portion of a day is ignored.  The C<delta_ms>
+method converts any day and months differences to minutes.
+
+Unlike the subtraction methods, B<these methods always return a
+positive (or zero) duration>.
 
 =back
 
@@ -2233,8 +2292,7 @@ day, beginning at 23:59:00, actually contains 61 seconds.
 
 When doing date math, you are changing the I<local> datetime.  This is
 generally the same as changing the UTC datetime, except when a change
-crosses a daylight saving boundary.  The net effect of this is that 24
-hours is not always the same as 1 day.
+crosses a daylight saving boundary.  The net effect of this is that a single day may have more or less than 24.
 
 Specifically, if you do this:
 
