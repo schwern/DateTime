@@ -4,7 +4,7 @@ use strict;
 
 use vars qw($VERSION);
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 use Date::Leapyear ();
 use DateTime::Duration;
@@ -38,7 +38,7 @@ my( @MonthLengths, @LeapYearMonthLengths,
         if (@_) {
             my $lang = shift;
 
-            my $lang_class = "DateTime::Language::$lang";
+            my $lang_class = 'DateTime::Language::' . ucfirst lc $lang;
 
             eval "use $lang_class";
             die $@ if $@;
@@ -76,7 +76,7 @@ sub new {
     else
     {
         my $lang_class = 'DateTime::Language::' . ucfirst lc $args{language};
-        eval "require $class";
+        eval "use $lang_class";
         die $@ if $@;
         $self->{language} = $lang_class->new;
     }
@@ -516,6 +516,8 @@ sub time_zone { $_[0]->{tz} }
 
 sub offset { $_[0]->{tz}->offset_for_datetime( $_[0] ) }
 sub _offset_from_local_time { $_[0]->{tz}->offset_for_local_datetime( $_[0] ) }
+
+sub is_dst { $_[0]->{tz}->is_dst_for_datetime( $_[0] ) }
 
 sub time_zone_short_name { $_[0]->{tz}->short_name_for_datetime( $_[0] ) }
 
@@ -1160,6 +1162,11 @@ This returns the C<DateTime::TimeZone> object for the datetime object.
 
 This returns the offset, in seconds, of the datetime object according
 to the time zone.
+
+=item * is_dst
+
+Returns a boolean indicating whether or not the datetime object is
+currently in Daylight Saving Time or not.
 
 =item * time_zone_short_name
 
