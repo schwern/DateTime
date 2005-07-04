@@ -7,7 +7,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.29';
+    $VERSION = '0.2901';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -2387,7 +2387,7 @@ to leave the local time untouched.
 Fans of Tsai Ming-Liang's films will be happy to know that this does
 work:
 
-  my $dt = DateTime::TimeZone->now( time_zone => 'Asia/Taipei' );
+  my $dt = DateTime->now( time_zone => 'Asia/Taipei' );
 
   $dt->set_time_zone( 'Europe/Paris' );
 
