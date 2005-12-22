@@ -2,12 +2,9 @@
 
 use strict;
 
-use Test::More tests => 100;
+use Test::More tests => 105;
 
 use DateTime;
-
-use lib './t';
-require 'testlib.pl';
 
 {
     my $date1 = DateTime->new( year => 2001, month => 5, day => 10,
@@ -69,7 +66,7 @@ require 'testlib.pl';
     is( $dur->delta_seconds, 0, 'date minus itself should have no delta seconds' );
 
     my $new = $date1 - DateTime::Duration->new( years => 2 );
-    is( fake_ical($new), '19990510T040302Z', 'test - overloading' );
+    is( $new->datetime, '1999-05-10T04:03:02', 'test - overloading' );
 }
 
 {
@@ -77,16 +74,16 @@ require 'testlib.pl';
 			   hour => 5, minute => 1, second => 1,
 			   time_zone => 'UTC' );
 
-    my $X = $d->clone;
-    $X->subtract( weeks   => 1,
-		  days    => 1,
-		  hours   => 1,
-		  minutes => 1,
-		  seconds => 1,
-		);
+    my $d2 = $d->clone;
+    $d2->subtract( weeks   => 1,
+                   days    => 1,
+                   hours   => 1,
+                   minutes => 1,
+                   seconds => 1,
+                 );
 
-    ok( defined $X, 'Defined' );
-    is( fake_ical($X), '20011011T040000Z', 'Subtract and get the right thing' );
+    ok( defined $d2, 'Defined' );
+    is( $d2->datetime, '2001-10-11T04:00:00', 'Subtract and get the right thing' );
 }
 
 # based on bug report from Eric Cholet
@@ -336,26 +333,41 @@ require 'testlib.pl';
 }
 
 {
-    my $date1 = DateTime->new( year      => 2003,
-                               month     => 4,
-                               day       => 6,
-                               hour      => 1,
-                               minute    => 58,
-                               time_zone => "America/Chicago",
-                             );
+    my $dt1 = DateTime->new( year => 2005, month => 6, day => 11,
+                             time_zone => 'UTC',
+                           );
 
-    my $date2 = DateTime->new( year      => 2003,
-                               month     => 4,
-                               day       => 6,
-                               hour      => 3,
-                               minute    => 01,
-                               time_zone => "America/Chicago",
-                             );
+    my $dt2 = DateTime->new( year => 2005, month => 11, day => 10,
+                             time_zone => 'UTC',
+                           );
 
-    my $dur = $date2->subtract_datetime($date1);
+    my $dur = $dt2->subtract_datetime($dt1);
+    my %deltas = $dur->deltas;
+    is( $deltas{months}, 4, '4 months - smaller day > bigger day' );
+    is( $deltas{days}, 29, '29 days - smaller day > bigger day' );
+    is( $deltas{minutes}, 0, '0 minutes - smaller day > bigger day' );
 
-    is( $dur->delta_months, 0, 'math of DST change - delta_months is 0' );
-    is( $dur->delta_days, 0, 'math of DST change - delta_days is 0' );
-    is( $dur->delta_minutes, 3, 'math of DST change - delta_minutes is 3' );
-    is( $dur->delta_seconds, 0, 'math of DST change - delta_seconds is 0' );
+    is( $dt1->clone->add_duration($dur), $dt2, '$dt1 + $dur == $dt2' );
+    # XXX - this does not work, nor will it ever work
+#    is( $dt2->clone->subtract_duration($dur), $dt1, '$dt2 - $dur == $dt1' );
+}
+
+
+{
+    my $dt1 = DateTime->new( year => 2005, month => 6, day => 11,
+                             time_zone => 'UTC',
+                           );
+
+    my $dt2 = DateTime->new( year => 2005, month => 11, day => 10,
+                             time_zone => 'UTC',
+                           );
+
+    my $dur = $dt2->delta_days($dt1);
+    my %deltas = $dur->deltas;
+    is( $deltas{months}, 0, '30 months - smaller day > bigger day' );
+    is( $deltas{days}, 152, '152 days - smaller day > bigger day' );
+    is( $deltas{minutes}, 0, '0 minutes - smaller day > bigger day' );
+
+    is( $dt1->clone->add_duration($dur), $dt2, '$dt1 + $dur == $dt2' );
+    is( $dt2->clone->subtract_duration($dur), $dt1, '$dt2 - $dur == $dt1' );
 }

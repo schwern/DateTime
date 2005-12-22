@@ -1,3 +1,51 @@
+0.30    2005-12-22
+
+[ ENHANCEMENTS ]
+
+- Expanded and rewrote the docs on date math to try to explain exactly
+how DateTime.pm works, and in particular cover the problems DST
+introduces to various types of date math.  The docs now also include
+some specific recommendations on getting sane results from datetime
+math.
+
+- Added calendar_duration() and clock_duration() methods to
+DateTime::Duration
+
+- Explicitly override the stringification method for
+DateTime::Infinite objects.  They now stringify as whatever the IEEE
+infinity and negative infinity numbers stringify to on your platform.
+On Linux this is "inf" and "-inf". CPAN RT #16632.
+
+[ BUG FIXES ]
+
+- delta_md() and delta_days() did not always return correct values
+when crossing a DST change.
+
+- The pure Perl version of the code had a dependency ordering problem
+where DateTime::LeapSecond depended on other pure Perl code that
+wasn't yet available.  I'm not sure how this ever worked.
+
+- Remove mentions of leap second on 1971-12-31 from the docs, because
+there was no leap second that day.  Reported by Mike Schilli.
+
+- If you added a second to a datetime that was on a leap second (like
+2005-12-31T23:59:60) it got "stuck" and kept returning the same
+datetime.  Reported by Mike Schilli.
+
+- Changes to the tests in 20infinite.t may fix failures seen on some
+platforms and with new versions of Test::More (0.62 was known to cause
+failures)
+
+[ *** BACKWARDS INCOMPATIBILITIES *** ]
+
+- The subtract_datetime() method switched back to using the local
+portion of the date _and_ time, but it now accounts for days with DST
+changes specially.  This produces results that fix the bugs that were
+fixed by previous subtraction changes in 0.28 and 0.29, but without
+introducing even more bugs.  The overall result should be sane, but
+please see the docs for details.
+
+
 0.2901  2005-07-04
 
 - A leap second for the end of 2005 was announced.
@@ -7,10 +55,10 @@
 
 [ *** BACKWARDS INCOMPATIBILITIES *** ]
 
-- When adding/subtraction a duration with months or days that crossed
+- When adding/subtracting a duration with months or days that crossed
 a DST change, the result was based on the local time, not the UTC
-time.  For consistent results, it is necessary to use the UTC time for
-all date math.  Reported by J. Alexander Docauer.
+time.  For consistent results, it is necessary to use the UTC time
+(but local date) for all date math.  Reported by J. Alexander Docauer.
 
 
 0.28    2005-02-27

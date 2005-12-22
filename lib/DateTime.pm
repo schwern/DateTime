@@ -7,7 +7,7 @@ use vars qw($VERSION);
 
 BEGIN
 {
-    $VERSION = '0.2901';
+    $VERSION = '0.30';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -45,7 +45,7 @@ BEGIN
 
 use DateTime::Duration;
 use DateTime::Locale;
-use DateTime::TimeZone;
+use DateTime::TimeZone 0.38;
 use Params::Validate qw( validate validate_pos SCALAR BOOLEAN HASHREF OBJECT );
 use Time::Local ();
 
@@ -58,7 +58,7 @@ use Time::Local ();
 use overload ( 'fallback' => 1,
                '<=>' => '_compare_overload',
                'cmp' => '_compare_overload',
-               '""'  => 'format_datetime',
+               '""'  => '_stringify',
                '-'   => '_subtract_overload',
                '+'   => '_add_overload',
              );
@@ -721,7 +721,7 @@ sub leap_seconds
     return DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} );
 }
 
-sub format_datetime
+sub _stringify
 {
     my $self = shift;
 
@@ -1005,21 +1005,24 @@ sub utc_year { $_[0]->{utc_year} }
 # returns a result that is relative to the first datetime
 sub subtract_datetime
 {
-    my $self = shift;
-    my $dt = shift;
+    my $dt1 = shift;
+    my $dt2 = shift;
 
-    # We only want a negative duration if $dt > $self.
+    $dt2 = $dt2->clone->set_time_zone( $dt1->time_zone )
+        unless $dt1->time_zone->name eq $dt2->time_zone->name;
+
+    # We only want a negative duration if $dt2 > $dt1 ($self)
     my ( $bigger, $smaller, $negative ) =
-        ( $self >= $dt ?
-          ( $self, $dt, 0 ) :
-          ( $dt, $self, 1 )
+        ( $dt1 >= $dt2 ?
+          ( $dt1, $dt2, 0 ) :
+          ( $dt2, $dt1, 1 )
         );
 
-    my $is_floating = $self->time_zone->is_floating &&
-                      $dt->time_zone->is_floating;
+    my $is_floating = $dt1->time_zone->is_floating &&
+                      $dt2->time_zone->is_floating;
+
 
     my $minute_length = 60;
-
     unless ($is_floating)
     {
         my ( $utc_rd_days, $utc_rd_secs ) = $smaller->utc_rd_values;
@@ -1034,28 +1037,57 @@ sub subtract_datetime
             # how long that minute was.  If one of the datetimes is
             # floating, we just assume a minute is 60 seconds.
 
-            $minute_length = $self->_day_length($utc_rd_days) - 86340;
+            $minute_length = $dt1->_day_length($utc_rd_days) - 86340;
         }
     }
 
-    my @bigger  = ( $bigger->_utc_ymd, $bigger->_utc_hms );
-    my @smaller = ( $smaller->_utc_ymd, $smaller->_utc_hms );
+    # This is a gross hack that basically figures out if the bigger of
+    # the two datetimes is the day of a DST change.  If it's a 23 hour
+    # day (switching _to_ DST) then we subtract 60 minutes from the
+    # local time.  If it's a 25 hour day then we add 60 minutes to the
+    # local time.
+    #
+    # This produces the most "intuitive" results, though there are
+    # still reversibility problems with the resultant duration.
+    my $bigger_min = $bigger->hour * 60 + $bigger->minute;
+    if ( $bigger->time_zone->has_dst_changes )
+    {
+
+        $bigger_min -= 60
+            # it's a 23 hour (local) day
+            if ( $bigger->is_dst
+                 &&
+                 do { my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
+                      $prev_day && ! $prev_day->is_dst ? 1 : 0 }
+               );
+
+        $bigger_min += 60
+            # it's a 25 hour (local) day
+            if ( ! $bigger->is_dst
+                 &&
+                 do { my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
+                      $prev_day && $prev_day->is_dst ? 1 : 0 }
+               );
+    }
 
     my ( $months, $days, $minutes, $seconds, $nanoseconds ) =
-        $self->_adjust_for_positive_difference
-            ( $bigger[0] * 12 + $bigger[1], $smaller[0] * 12 + $smaller[1],
+        $dt1->_adjust_for_positive_difference
+            ( $bigger->year * 12 + $bigger->month, $smaller->year * 12 + $smaller->month,
 
-              $bigger[2], $smaller[2],
+              $bigger->day, $smaller->day,
 
-              $bigger[3] * 60 + $bigger[4], $smaller[3] * 60 + $smaller[4],
+              $bigger_min, $smaller->hour * 60 + $smaller->minute,
 
-	      $bigger[5], $smaller[5],
+	      $bigger->second, $smaller->second,
 
 	      $bigger->nanosecond, $smaller->nanosecond,
 
 	      $minute_length,
 
-	      $self->_month_length( $smaller[0], $smaller[1] ),
+              # XXX - using the smaller as the month length is
+              # somewhat arbitrary, we could also use the bigger -
+              # either way we have reversibility problems
+	      $dt1->_month_length( $smaller->year, $smaller->month ),
             );
 
     if ($negative)
@@ -1157,12 +1189,27 @@ sub delta_md
     my $self = shift;
     my $dt = shift;
 
-    my ( $smaller, $greater ) = sort $self, $dt;
+    my ( $smaller, $bigger ) = sort $self, $dt;
 
-    my $dur = $greater->subtract_datetime($smaller);
+    my ( $months, $days, undef, undef, undef ) =
+        $dt->_adjust_for_positive_difference
+            ( $bigger->year * 12 + $bigger->month, $smaller->year * 12 + $smaller->month,
 
-    return DateTime::Duration->new( months => $dur->delta_months,
-                                    days   => $dur->delta_days );
+              $bigger->day, $smaller->day,
+
+              0, 0,
+
+              0, 0,
+
+              0, 0,
+
+	      60,
+
+	      $smaller->_month_length( $smaller->year, $smaller->month ),
+            );
+
+    return DateTime::Duration->new( months => $months,
+                                    days   => $days );
 }
 
 sub delta_days
@@ -1170,9 +1217,9 @@ sub delta_days
     my $self = shift;
     my $dt = shift;
 
-    my ( $smaller, $greater ) = sort $self, $dt;
+    my ( $smaller, $bigger ) = sort( ($self->local_rd_values)[0], ($dt->local_rd_values)[0] );
 
-    DateTime::Duration->new( days => int( $greater->jd - $smaller->jd ) );
+    DateTime::Duration->new( days => $bigger - $smaller );
 }
 
 sub delta_ms
@@ -1275,7 +1322,7 @@ sub add_duration
 
     if ( $deltas{days} )
     {
-        $self->{utc_rd_days} += $deltas{days};
+        $self->{local_rd_days} += $deltas{days};
 
         $self->{utc_year} += int( $deltas{days} / 365 ) + 1;
     }
@@ -1286,8 +1333,8 @@ sub add_duration
         # it the 0th day of the following month (which then will
         # normalize back to the last day of the new month).
         my ($y, $m, $d) = ( $dur->is_preserve_mode ?
-                            $self->_rd2ymd( $self->{utc_rd_days} + 1 ) :
-                            $self->_rd2ymd( $self->{utc_rd_days} )
+                            $self->_rd2ymd( $self->{local_rd_days} + 1 ) :
+                            $self->_rd2ymd( $self->{local_rd_days} )
                           );
 
         $d -= 1 if $dur->is_preserve_mode;
@@ -1295,18 +1342,18 @@ sub add_duration
         if ( ! $dur->is_wrap_mode && $d > 28 )
         {
             # find the rd for the last day of our target month
-            $self->{utc_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months} + 1, 0 );
+            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months} + 1, 0 );
 
             # what day of the month is it? (discard year and month)
-            my $last_day = ($self->_rd2ymd( $self->{utc_rd_days} ))[2];
+            my $last_day = ($self->_rd2ymd( $self->{local_rd_days} ))[2];
 
             # if our original day was less than the last day,
             # use that instead
-            $self->{utc_rd_days} -= $last_day - $d if $last_day > $d;
+            $self->{local_rd_days} -= $last_day - $d if $last_day > $d;
         }
         else
         {
-            $self->{utc_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
+            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
         }
 
         $self->{utc_year} += int( $deltas{months} / 12 ) + 1;
@@ -1314,17 +1361,7 @@ sub add_duration
 
     if ( $deltas{days} || $deltas{months} )
     {
-        # before the addition, there were 1+ leap seconds.  add that
-        # back in as "normal" seconds.  this preserves the behavior of
-        # DateTime 0.28, but I'm not sure it's really correct.
-        if ( $self->{utc_rd_secs} >= $self->_day_length( $self->{utc_rd_days} ) )
-        {
-            $self->{utc_rd_days}++;
-
-            $self->{utc_rd_secs} -= $self->_day_length( $self->{utc_rd_days} );
-        }
-
-        $self->_calc_local_rd;
+        $self->_calc_utc_rd;
 
         $self->_handle_offset_modifier( $self->second );
     }
@@ -1349,7 +1386,10 @@ sub add_duration
 
         $self->_normalize_seconds;
 
-        $self->_handle_offset_modifier( $self->second );
+        # This might be some big number much bigger than 60, but
+        # that's ok (there are tests in 19leap_second.t to confirm
+        # that)
+        $self->_handle_offset_modifier( $self->second + $deltas{seconds} );
     }
 
     my $new =
@@ -1531,7 +1571,7 @@ sub set_time_zone
     # This is a bit of a hack but it works because time zone objects
     # are singletons, and if it doesn't work all we lose is a little
     # bit of speed.
-    return if $self->{tz} eq $tz;
+    return $self if $self->{tz} eq $tz;
 
     my $was_floating = $self->{tz}->is_floating;
 
@@ -1793,6 +1833,11 @@ time zones are not really comparable.
 If you are planning to use any objects with a real time zone, it is
 strongly recommended that you B<do not> mix these with floating
 datetimes.
+
+=head2 Math
+
+If you are going to be using doing date math, please read the section
+L<How Datetime Math is Done|How Datetime Math is Done>.
 
 =head2 Methods
 
@@ -2182,7 +2227,7 @@ the fourth day of January, which is equivalent to saying that it's the
 first week to overlap the new year by at least four days.
 
 Typically the week year will be the same as the year that the object
-is in, but dates at the very begining of a calendar year often end up
+is in, but dates at the very beginning of a calendar year often end up
 in the last week of the prior year, and similarly, the final few days
 of the year may be placed in the first week of the next year.
 
@@ -2257,8 +2302,8 @@ start of the epoch will be returned as a negative number.
 This return value from this method is always an integer.
 
 Since the epoch does not account for leap seconds, the epoch time for
-1971-12-31T23:59:60 (UTC) is exactly the same as that for
-1972-01-01T00:00:00.
+1972-12-31T23:59:60 (UTC) is exactly the same as that for
+1973-01-01T00:00:00.
 
 Epoch times cannot represent many dates on most platforms, and this
 method may simply return undef in some cases.
@@ -2435,6 +2480,32 @@ as well as due to the presence of leap seconds.
 The returned duration may have deltas for months, days, minutes,
 seconds, and nanoseconds.
 
+=item * delta_md( $datetime )
+
+=item * delta_days( $datetime )
+
+Each of these methods returns a new C<DateTime::Duration> object
+representing some portion of the difference between two datetimes.
+The C<delta_md()> method returns a duration which contains only the
+month and day portions of the duration is represented.  The
+C<delta_days()> method returns a duration which contains only days,
+and the C<delta_ms()> method 
+
+The C<delta_md> and C<delta_days> methods truncate the duration so
+that any fractional portion of a day is ignored.  Both of these
+methods operate on the date portion of a datetime only, and so
+effectively ignore the time zone.
+
+Unlike the subtraction methods, B<these methods always return a
+positive (or zero) duration>.
+
+=item * delta_ms( $datetime )
+
+Returns a duration which contains only minutes and seconds.  Any day
+and month differences to minutes are converted to minutes and seconds.
+
+B<Always return a positive (or zero) duration>.
+
 =item * subtract_datetime_absolute( $datetime )
 
 This method returns a new C<DateTime::Duration> object representing
@@ -2442,27 +2513,6 @@ the difference between the two dates in seconds and nanoseconds.  This
 is the only way to accurately measure the absolute amount of time
 between two datetimes, since units larger than a second do not
 represent a fixed number of seconds.
-
-=item * delta_md( $datetime )
-
-=item * delta_days( $datetime )
-
-=item * delta_ms( $datetime )
-
-Each of these methods returns a new C<DateTime::Duration> object
-representing some portion of the difference between two datetimes.
-The C<delta_md()> method returns a duration which contains only the
-month and day portions of the duration is represented.  The
-C<delta_days()> method returns a duration which contains only days,
-and the C<delta_ms()> method returns a duration which contains only
-minutes and seconds.
-
-The C<delta_md> and C<delta_days> methods truncate the duration so
-that any fractional portion of a day is ignored.  The C<delta_ms>
-method converts any day and month differences to minutes.
-
-Unlike the subtraction methods, B<these methods always return a
-positive (or zero) duration>.
 
 =back
 
@@ -2515,11 +2565,81 @@ implements the C<utc_rd_values()> method.
 
 =back
 
-=head2 How Date Math is Done
+=head2 How Datetime Math is Done
 
-It's important to have some understanding of how date math is
+It's important to have some understanding of how datetime math is
 implemented in order to effectively use this module and
 C<DateTime::Duration>.
+
+=head3 Making Things Simple
+
+If you want to simplify your life and not have to think too hard about
+the nitty-gritty of datetime math, I have several recommendations:
+
+=over 4
+
+=item * use the floating time zone
+
+If you do not care about time zones or leap seconds, use the
+"floating" timezone:
+
+  my $dt = DateTime->now( time_zone => 'floating' );
+
+Math done on two objects in the floating time zone produces very
+predictable results.
+
+=item * use UTC for all calculations
+
+If you do care about time zones (particularly DST) or leap seconds,
+try to use non-UTC time zones for presentation and user input only.
+Convert to UTC immediately and convert back to the local time zone for
+presentation:
+
+  my $dt = DateTime->new( %user_input, time_zone => $user_tz );
+  $dt->set_time_zone('UTC');
+
+  # do various operations - store it, retrieve it, add, subtract, etc.
+
+  $dt->set_time_zone($user_tz);
+  print $dt->datetime;
+
+=item * math on non-UTC time zones
+
+If you need to do date math on objects with non-UTC time zones, please
+read the caveats below carefully.  The results C<DateTime.pm> are
+predictable and correct, and mostly intuitive, but datetime math gets
+very ugly when time zones are involved, and there are a few strange
+corner cases involving subtraction of two datetimes across a DST
+change.
+
+If you can always use the floating or UTC time zones, you can skip
+ahead to L<Leap Seconds and Date Math|Leap Seconds and Date Math>
+
+=item * date vs datetime math
+
+If you only care about the date (calendar) portion of a datetime, you
+should use either C<delta_md()> or C<delta_days()>, not
+C<subtract_datetime()>.  This will give predictable, unsurprising
+results, free from DST-related complications.
+
+=item * subtract_datetime() and add_duration()
+
+You must convert your datetime objects to the UTC time zone before
+doing date math if you want to make sure that the following formulas
+are always true:
+
+  $dt2 - $dt1 = $dur
+  $dt1 + $dur = $dt2
+  $dt2 - $dur = $dt1
+
+Note that using C<delta_days> ensures that this formula always works,
+regardless of the timezone of the objects involved, as does using
+C<subtract_datetime_absolute()>.  Anything may sometimes be
+non-reversible.
+
+=back
+
+=head3 Adding a Duration to a Datetime
 
 The parts of a duration can be broken down into five parts.  These are
 months, days, minutes, seconds, and nanoseconds.  Adding one month to
@@ -2528,9 +2648,15 @@ Similarly, due to DST and leap seconds, adding a day can be different
 than adding 86,400 seconds, and adding a minute is not exactly the
 same as 60 seconds.
 
+We cannot convert between these units, except for seconds and
+nanoseconds, because there is no fixed conversion between the two
+units, because of things like leap seconds, DST changes, etc.
+
 C<DateTime.pm> always adds (or subtracts) days, then months, minutes,
 and then seconds and nanoseconds.  If there are any boundary
-overflows, these are normalized at each step.
+overflows, these are normalized at each step.  For the days and months
+(the calendar) the local (not UTC) values are used.  For minutes and
+seconds, the local values are used.  This generally just works.
 
 This means that adding one month and one day to February 28, 2003 will
 produce the date April 1, 2003, not March 29, 2003.
@@ -2548,12 +2674,170 @@ days, we end up with March 29, 2003:
 
   # 2003-03-29
 
+We see similar strangeness when math crosses a DST boundary:
+
+  my $dt = DateTime->new( year => 2003, month => 4, day => 5,
+                          hour => 1, minute => 58,
+                          time_zone => "America/Chicago",
+                        );
+
+  $dt->add( days => 1, minutes => 3 );
+  # 2003-04-06 02:01:00
+
+  $dt->add( minutes => 3 )->( days => 1 );
+  # 2003-04-06 03:01:00
+
+Note that if you converted the datetime object to UTC first you would
+get predictable results.
+
+If you want to know how many seconds a duration object represents, you
+have to add it to a datetime to find out, so you could do:
+
+ my $now = DateTime->now( time_zone => 'UTC' );
+ my $later = $now->clone->add_duration($duration);
+
+ my $seconds_dur = $later->subtract_datetime_absolute($now);
+
+This returns a duration which only contains seconds and nanoseconds.
+
+If we were add the duration to a different datetime object we might
+get a different number of seconds.
+
+If you need to do lots of work with durations, take a look at Rick
+Measham's C<DateTime::Format::Duration> module, which lets you present
+information from durations in many useful ways.
+
+There are other subtract/delta methods in DateTime.pm to generate
+different types of durations.  These methods are
+C<subtract_datetime()>, C<subtract_datetime_absolute()>,
+C<delta_md()>, C<delta_days()>, and C<delta_ms()>.
+
+=head3 Datetime Subtraction
+
+Date subtraction is done solely based on the two object's local
+datetimes, with one exception to handle DST changes.  Also, if the two
+datetime objects are in different time zones, one of them is converted
+to the other's time zone first before subtraction.  This is best
+explained through examples:
+
+The first of these probably makes the most sense:
+
+    my $dt1 = DateTime->new( year => 2003, month => 5, day => 6,
+                             time_zone => 'America/Chicago',
+                           );
+    # not DST
+
+    my $dt2 = DateTime->new( year => 2003, month => 11, day => 6,
+                             time_zone => 'America/Chicago',
+                           );
+    # is DST
+
+    my $dur = $dt2->subtract_datetime($dt1);
+    # 6 months
+
+Nice and simple.
+
+This one is a little trickier, but still fairly logical:
+
+    my $dt1 = DateTime->new( year => 2003, month => 4, day => 5,
+                             hour => 1, minute => 58,
+                             time_zone => "America/Chicago",
+                           );
+    # is DST
+
+    my $dt2 = DateTime->new( year => 2003, month => 4, day => 7,
+                             hour => 2, minute => 1,
+                             time_zone => "America/Chicago",
+                           );
+    # not DST
+
+    my $dur = $dt2->subtract_datetime($dt1);
+    # 2 days and 3 minutes
+
+Which contradicts the result this one gives, even though they both
+make sense:
+
+    my $dt1 = DateTime->new( year => 2003, month => 4, day => 5,
+                             hour => 1, minute => 58,
+                             time_zone => "America/Chicago",
+                           );
+    # is DST
+
+    my $dt2 = DateTime->new( year => 2003, month => 4, day => 6,
+                             hour => 3, minute => 1,
+                             time_zone => "America/Chicago",
+                           );
+    # not DST
+
+    my $dur = $dt2->subtract_datetime($dt1);
+    # 1 day and 3 minutes
+
+This last example illustrates the "DST" exception mentioned earlier.
+The exception accounts for the fact 2003-04-06 only lasts 23 hours.
+
+And finally:
+
+    my $dt2 = DateTime->new( year => 2003, month => 10, day => 26,
+                             hour => 1,
+                             time_zone => 'America/Chicago',
+                           );
+
+    my $dt1 = $dt2->clone->subtract( hours => 1 );
+
+    my $dur = $dt2->subtract_datetime($dt1);
+    # 60 minutes
+
+This seems obvious until you realize that subtracting 60 minutes from
+C<$dt2> in the above example still leaves the clock time at
+"01:00:00".  This time we are accounting for a 25 hour day.
+
+=head3 Reversibility
+
+Date math operations are not always reversible.  This is because of
+the way that addition operations are ordered.  As was discussed
+earlier, adding 1 day and 3 minutes in one call to C<add()> is not the
+same as first adding 3 minutes and 1 day in two separate calls.
+
+If we take a duration returned from C<subtract_datetime()> and then
+try to add or subtract that duration from one of the datetimes we just
+used, we sometimes get interesting results:
+
+  my $dt1 = DateTime->new( year => 2003, month => 4, day => 5,
+                           hour => 1, minute => 58,
+                           time_zone => "America/Chicago",
+                         );
+
+  my $dt2 = DateTime->new( year => 2003, month => 4, day => 6,
+                           hour => 3, minute => 1,
+                           time_zone => "America/Chicago",
+                         );
+
+  my $dur = $dt2->subtract_datetime($dt1);
+  # 1 day and 3 minutes
+
+  $dt1->add_duration($dur);
+  # gives us $dt2
+
+  $dt2->subtract_duration($dur);
+  # gives us 2003-04-05 02:58:00 - 1 hour later than $dt1
+
+The C<subtract_dauration()> operation gives us a (perhaps) unexpected
+answer because it first subtracts one day to get 2003-04-05T03:01:00
+and then subtracts 3 minutes to get the final result.
+
+If we explicitly reverse the order we can get the original value of
+C<$dt1>. This can be facilitated by C<DateTime::Duration>'s
+C<calendar_duration()> and C<clock_duration()> methods:
+
+  $dt2->subtract_duration( $dur->clock_duration )
+      ->subtract_duration( $dur->calendar_duration );
+
 =head3 Leap Seconds and Date Math
 
-The presence of leap seconds can cause some strange anomalies in date
+The presence of leap seconds can cause even more anomalies in date
 math.  For example, the following is a legal datetime:
 
-  my $dt = DateTime->new( year => 1971, month => 12, day => 31,
+  my $dt = DateTime->new( year => 1972, month => 12, day => 31,
                           hour => 23, minute => 59, second => 60,
                           time_zone => 'UTC' );
 
@@ -2561,13 +2845,13 @@ If we do the following:
 
  $dt->add( months => 1 );
 
-Then the datetime is now "1972-02-01 00:00:00", because there is no
-23:59:60 on 1972-01-31.
+Then the datetime is now "1973-02-01 00:00:00", because there is no
+23:59:60 on 1973-01-31.
 
 Leap seconds also force us to distinguish between minutes and seconds
 during date math.  Given the following datetime:
 
-  my $dt = DateTime->new( year => 1971, month => 12, day => 31,
+  my $dt = DateTime->new( year => 1972, month => 12, day => 31,
                           hour => 23, minute => 59, second => 30,
                           time_zone => 'UTC' );
 
@@ -2577,25 +2861,23 @@ day, beginning at 23:59:00, actually contains 61 seconds.
 
 Here are the results we get:
 
-  # 1971-12-31 23:59:30 - our starting datetime
+  # 1972-12-31 23:59:30 - our starting datetime
 
   $dt->clone->add( minutes => 1 );
-  # 1972-01-01 00:00:30 - one minute later
+  # 1973-01-01 00:00:30 - one minute later
 
   $dt->clone->add( seconds => 60 );
-  # 1972-01-01 00:00:29 - 60 seconds later
+  # 1973-01-01 00:00:29 - 60 seconds later
 
   $dt->clone->add( seconds => 61 );
-  # 1972-01-01 00:00:30 - 61 seconds later
+  # 1973-01-01 00:00:30 - 61 seconds later
 
 =head3 Local vs. UTC and 24 hours vs. 1 day
 
-When doing date math, you are changing the I<local> datetime.  This is
-generally the same as changing the UTC datetime, except when a change
-crosses a daylight saving boundary.  The net effect of this is that a
-single day may have more or less than 24 hours.
+When math crosses a daylight saving boundary, a single day may have
+more or less than 24 hours.
 
-Specifically, if you do this:
+For example, if you do this:
 
   my $dt = DateTime->new( year => 2003, month => 4, day => 5,
                           hour => 2,
@@ -2616,55 +2898,12 @@ However, this works:
 
 and produces a datetime with the local time of "03:00".
 
-Another way of thinking of this is that when doing date math, each of
-the seconds, minutes, days, and months components is added separately
-to the local time.
-
-So when we add 1 day to "2003-02-22 12:00:00" we are incrementing day
-component, 22, by one in order to produce 23.  If we add 24 hours,
-however, we're adding "24 * 60" minutes to the time component, and
-then normalizing the result (because there is no "36:00:00").
-
 If all this makes your head hurt, there is a simple alternative.  Just
 convert your datetime object to the "UTC" time zone before doing date
 math on it, and switch it back to the local time zone afterwards.
 This avoids the possibility of having date math throw an exception,
 and makes sure that 1 day equals 24 hours.  Of course, this may not
 always be desirable, so caveat user!
-
-=head3 The Results of Date Math
-
-Because date math is done on each unit separately, the results of date
-math may not always be what you expect.
-
-As we mentioned earlier, internally a duration is made up internally
-of five different units: months, days, minutes, seconds, and
-nanoseconds.
-
-Given any pair of units, we cannot convert between them, except for
-seconds and nanoseconds, because there is no fixed conversion between
-the two units, because of things like leap seconds, DST changes, etc.
-
-Here's an example, based on a question from Mark Fowler to the
-datetime@perl.org list.
-
-If you want to know how many seconds a duration really represents, you
-have to add it to a datetime to find out, so you could do:
-
- my $now = DateTime->now( time_zone => 'UTC' );
- my $later = $now->clone->add_duration($duration);
-
- my $seconds_dur = $later->subtract_datetime_absolute($now);
-
-This returns a duration which only contains seconds and nanoseconds.
-
-If we were add the duration to a different datetime object we might
-get a different number of seconds.
-
-There are other subtract/delta methods in DateTime.pm to generate
-different types of durations.  These methods are
-C<subtract_datetime()>, C<subtract_datetime_absolute()>,
-C<delta_md()>, C<delta_days()>, and C<delta_ms()>.
 
 =head2 Overloading
 
@@ -2921,6 +3160,16 @@ where "method" is a valid C<DateTime.pm> object method.
 
 As of version 0.13, DateTime implements Storable hooks in order to
 reduce the size of a serialized DateTime object.
+
+=head1 KNOWN BUGS
+
+The tests in F<20infinite.t> seem to fail on some machines,
+particularly on Win32.  This appears to be related to Perl's internal
+handling of IEEE infinity and NaN, and seems to be highly
+platform/compiler/phase of moon dependent.
+
+If you don't plan to use infinite datetimes you can probably ignore
+this.  This will be fixed (somehow) in future versions.
 
 =head1 SUPPORT
 

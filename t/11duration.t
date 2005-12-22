@@ -2,13 +2,10 @@
 
 use strict;
 
-use Test::More tests => 118;
+use Test::More tests => 128;
 
 use DateTime;
 use DateTime::Duration;
-
-use lib './t';
-require 'testlib.pl';
 
 {
     my %pairs = ( years   => 1,
@@ -69,6 +66,33 @@ require 'testlib.pl';
 
     ok( $dur->is_wrap_mode, "wrap mode" );
 }
+{
+    my %pairs = ( years   => 1,
+                  months  => 2,
+                  weeks   => 3,
+                  days    => 4,
+                  hours   => 6,
+                  minutes => 7,
+                  seconds => 8,
+                  nanoseconds => 9,
+                );
+
+    my $dur = DateTime::Duration->new( %pairs, end_of_month => 'limit' );
+
+    my $calendar_dur = $dur->calendar_duration;
+    is( $calendar_dur->delta_months, 14, "date - delta_months is 14" );
+    is( $calendar_dur->delta_minutes, 0, "date - delta_minutes is 0" );
+    is( $calendar_dur->delta_seconds, 0, "date - delta_seconds is 0" );
+    is( $calendar_dur->delta_nanoseconds, 0, "date - delta_nanoseconds is 0" );
+    ok( $calendar_dur->is_limit_mode, "limit mode" );
+
+    my $clock_dur = $dur->clock_duration;
+    is( $clock_dur->delta_months, 0, "time  - delta_months is 0" );
+    is( $clock_dur->delta_minutes, 367, "time  - delta_minutes is 367" );
+    is( $clock_dur->delta_seconds, 8, "time  - delta_seconds is 8" );
+    is( $clock_dur->delta_nanoseconds, 9, "time  - delta_nanoseconds is 9" );
+    ok( $clock_dur->is_limit_mode, "limit mode" );
+}
 
 {
     my $dur = DateTime::Duration->new( days => 1, end_of_month => 'limit' );
@@ -89,7 +113,7 @@ my $leap_day = DateTime->new( year => 2004, month => 2, day => 29,
         $leap_day + DateTime::Duration->new( years => 1,
                                              end_of_month => 'wrap' );
 
-    is( fake_ical($new), '20050301Z', "new date should be 2005-03-01" );
+    is( $new->date, '2005-03-01', "new date should be 2005-03-01" );
 }
 
 {
@@ -97,7 +121,7 @@ my $leap_day = DateTime->new( year => 2004, month => 2, day => 29,
         $leap_day + DateTime::Duration->new( years => 1,
                                              end_of_month => 'limit' );
 
-    is( fake_ical($new), '20050228Z', "new date should be 2005-02-28" );
+    is( $new->date, '2005-02-28', "new date should be 2005-02-28" );
 }
 
 
@@ -106,12 +130,12 @@ my $leap_day = DateTime->new( year => 2004, month => 2, day => 29,
         $leap_day + DateTime::Duration->new( years => 1,
                                              end_of_month => 'preserve' );
 
-    is( fake_ical($new), '20050228Z', "new date should be 2005-02-28" );
+    is( $new->date, '2005-02-28', "new date should be 2005-02-28" );
 
     my $new2 =
         $leap_day + DateTime::Duration->new( months => 1,
                                              end_of_month => 'preserve' );
-    is( fake_ical($new2), '20040331Z', "new date should be 2004-03-31" );
+    is( $new2->date, '2004-03-31', "new date should be 2004-03-31" );
 }
 
 {
