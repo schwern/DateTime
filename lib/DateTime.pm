@@ -4,10 +4,14 @@ use strict;
 
 use vars qw($VERSION);
 
+use Carp;
+use DateTime::Helpers;
+use Scalar::Util ();
+
 
 BEGIN
 {
-    $VERSION = '0.30';
+    $VERSION = '0.31';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -167,7 +171,7 @@ sub new
     my $class = shift;
     my %p = validate( @_, $NewValidate );
 
-    die "Invalid day of month (day = $p{day} - month = $p{month})\n"
+    Carp::croak( "Invalid day of month (day = $p{day} - month = $p{month})\n" )
         if $p{day} > $class->_month_length( $p{year}, $p{month} );
 
     my $self = bless {}, $class;
@@ -227,7 +231,7 @@ sub new
                $p{second} - 59 )
            )
         {
-            die "Invalid second value ($p{second})\n";
+            Carp::croak( "Invalid second value ($p{second})\n" );
         }
     }
 
@@ -568,7 +572,7 @@ sub from_day_of_year
 
     my $is_leap_year = $class->_is_leap_year( $p{year} );
 
-    die "$p{year} is not a leap year.\n"
+    Carp::croak( "$p{year} is not a leap year.\n" )
         if $p{day_of_year} == 366 && ! $is_leap_year;
 
     my $month = 1;
@@ -1266,7 +1270,7 @@ sub _subtract_overload
         ( $date2, $date1 ) = ( $date1, $date2 );
     }
 
-    if ( UNIVERSAL::isa( $date2, 'DateTime::Duration' ) )
+    if ( DateTime::Helpers::isa( $date2, 'DateTime::Duration' ) )
     {
         my $new = $date1->clone;
         $new->add_duration( $date2->inverse );
@@ -1432,13 +1436,13 @@ sub _compare
         return $dt1->{utc_rd_days} <=> $dt2;
     }
 
-    die "Cannot compare a datetime to a regular scalar"
-        unless ( UNIVERSAL::can( $dt1, 'utc_rd_values' ) &&
-                 UNIVERSAL::can( $dt2, 'utc_rd_values' ) );
+    Carp::croak( "Cannot compare a datetime to a regular scalar" )
+        unless ( DateTime::Helpers::can( $dt1, 'utc_rd_values' ) &&
+                 DateTime::Helpers::can( $dt2, 'utc_rd_values' ) );
 
     if ( ! $consistent &&
-         UNIVERSAL::can( $dt1, 'time_zone' ) &&
-         UNIVERSAL::can( $dt2, 'time_zone' )
+         DateTime::Helpers::can( $dt1, 'time_zone' ) &&
+         DateTime::Helpers::can( $dt2, 'time_zone' )
        )
     {
         my $is_floating1 = $dt1->time_zone->is_floating;
@@ -1661,6 +1665,7 @@ sub STORABLE_thaw
     return $self;
 }
 
+
 package DateTime::_Thawed;
 
 sub utc_rd_values { @{ $_[0]->{utc_vals} } }
@@ -1838,6 +1843,14 @@ datetimes.
 
 If you are going to be using doing date math, please read the section
 L<How Datetime Math is Done|How Datetime Math is Done>.
+
+=head2 Time Zone Warning
+
+Do not try to use named time zones (like "America/Chicago") with dates
+very far in the future (thousands of years). The current
+implementation of C<DateTime::TimeZone> will use a huge amount of
+memory calculating all the DST changes from now until the future
+date. Use UTC or the floating time zone and you will be safe.
 
 =head2 Methods
 
@@ -3189,7 +3202,7 @@ stole all the code from.
 
 =head1 COPYRIGHT
 
-Copyright (c) 2003-2005 David Rolsky.  All rights reserved.  This
+Copyright (c) 2003-2006 David Rolsky.  All rights reserved.  This
 program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
