@@ -1,3 +1,13 @@
+0.32    2006-07-24
+
+[BUG FIXES]
+
+- Change how C compiler detection is done in the Makefile.PL so it
+does not rely on having make on the system. The new way should work on
+(most?) Unix and Win32 systems. Suggested by David Golden. See RT
+18969.
+
+
 0.31    2006-05-21
 
 [ ENHANCEMENTS ]
@@ -9,7 +19,7 @@ cases. Based on a suggestion by Max Maischein. See RT tickets 11692 &
 
 [ BUG FIXES ]
 
-- Removed all uses of UNIVERSAL::isa and UNIVERSAL::can.
+- Removed all uses of UNIVERSAL::isa and UNIVERSAL::can as functions.
 
 - Tweaked 20infinite.t test to give more useful output for some
 failures, though it probably doesn't fix them. See RT 17390.

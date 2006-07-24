@@ -14,29 +14,16 @@ for (@ARGV)
     /^--xs/ and $no_xs = 0;
 }
 
+if ($no_xs)
+{
+    write_makefile();
+    exit;
+}
+
 unless (defined $no_xs)
 {
-    print "Testing if you have a C compiler\n";
-
-    unless ( open F, ">test.c" )
-    {
-        warn "Cannot write test.c, skipping test compilation and install pure Perl version.\n";
-        no_cc();
-    }
-
-    print F <<'EOF';
-int main() { return 0; }
-EOF
-
-    close F or no_cc();
-
-    system( "$Config{make} test$Config{obj_ext}" ) and no_cc();
-
-    foreach ( 'test.c', "test$Config{obj_ext}" )
-    {
-	unlink $_
-	    or die "Cannot unlink $_: $!";
-    }
+    check_for_compiler()
+        or no_cc();
 
     if ( -d '.svn' )
     {
@@ -78,7 +65,7 @@ sub write_makefile
                    VERSION_FROM => 'lib/DateTime.pm',
                    AUTHOR       => 'Dave Rolsky <autarch@urth.org>',
                    ABSTRACT     => 'DateTime base objects',
-                   clean        => { FILES => $zz },
+                   clean        => { FILES => "test.c test.o $zz" },
                    CONFIGURE    => \&init,
 
                    PREREQ_PM    => { 'DateTime::Locale'   => 0.21,
@@ -109,8 +96,8 @@ sub no_cc
     $no_xs = 1;
     print <<'EOF';
 
- I cannot determine if you have a C compiler
- so I will install a perl-only implementation
+ I cannot find a C compiler so I will install a perl-only
+ implementation
 
  You can force installation of the XS version with
 
@@ -120,4 +107,45 @@ EOF
 
     write_makefile();
     exit;
+}
+
+sub check_for_compiler
+{
+    print "Testing if you have a C compiler\n";
+
+    eval { require ExtUtils::CBuilder };
+    if ($@)
+    {
+        return _check_for_compiler_manually();
+    }
+    else
+    {
+        return _check_for_compiler_with_cbuilder();
+    }
+}
+
+sub _check_for_compiler_with_cbuilder
+{
+    my $cb = ExtUtils::CBuilder->new( quiet => 1 );
+
+    return $cb->have_compiler;
+}
+
+sub _check_for_compiler_manually
+{
+    unless ( open F, ">test.c" )
+    {
+        warn "Cannot write test.c, skipping test compilation and installing pure Perl version.\n";
+        return 0;
+    }
+
+    print F <<'EOF';
+int main() { return 0; }
+EOF
+
+    close F or return 0;
+
+    system( "$Config{cc} -o test$Config{obj_ext} test.c" ) and return 0;
+
+    return 1;
 }
