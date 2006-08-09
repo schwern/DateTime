@@ -1,6 +1,25 @@
+0.33   2006-08-09  (the "Asia/Kaohsiung" release)
+
+[ ENHANCEMENTS ]
+
+- Attempting to do an overloaded operation (add, subtract, compare)
+with an inappropriate argument (like $dt + 1) gives a more useful
+error message.
+
+[ BUG FIXES ]
+
+- The fixes in 0.30 for subtract_datetime() crossing a DST change had
+a bug. When subtracting two dates, both occurring on a DST change
+date, but where the dates did not cross the change, the answer was off
+by an hour. Reported by Chris Prather. See RT 20697.
+
+- Borrowed a tweak from version.pm's Makefile.PL to make compiler
+detection work with MSVC.
+
+
 0.32    2006-07-24
 
-[BUG FIXES]
+[ BUG FIXES ]
 
 - Change how C compiler detection is done in the Makefile.PL so it
 does not rely on having make on the system. The new way should work on
