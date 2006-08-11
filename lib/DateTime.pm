@@ -10,7 +10,7 @@ use DateTime::Helpers;
 
 BEGIN
 {
-    $VERSION = '0.33';
+    $VERSION = '0.34';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -28,9 +28,11 @@ BEGIN
 		@DateTime::ISA = 'DynaLoader';
 		DateTime->bootstrap( $DateTime::VERSION );
 	    }
+
+            $DateTime::IsPurePerl = 0;
 	};
 
-	die $@ if $@ && $@ !~ /object version/;
+	die $@ if $@ && $@ !~ /object version|loadable object/;
 
         $loaded = 1 unless $@;
     }
