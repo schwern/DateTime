@@ -63,21 +63,12 @@ const int PREVIOUS_MONTH_DOLY[12] = { 0,
 const IV neg_dow[] = { 1, 7, 6, 5, 4, 3, 2 };
 
 IV
-_real_is_leap_year(IV y)
-{
-  IV r = 0;
-
-  /* We need to have this first so that year 0 is a leap year */
-  if (y % 400 == 0) {
-    r = 1;
-  } else if (y % 100 == 0) {
-    r = 0;
-  } else if (y % 4 == 0) {
-    r = 1;
-  }
-
-  return r;
+_real_is_leap_year(IV y) {
+  /* See http://www.perlmonks.org/?node_id=274247 for where this
+     silliness comes from */
+  return (y % 4) ? 0 : (y % 100) ? 1 : (y % 400) ? 0 : 1;
 }
+
 
 MODULE = DateTime       PACKAGE = DateTime
 
