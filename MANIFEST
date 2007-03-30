@@ -56,7 +56,9 @@ t/37local-add.t
 t/38local-subtract.t
 t/39no-so.t
 t/40leap-years.t
-t/99-pod.t
+t/pod-coverage.t
+t/pod.t
 TODO
 tools/leap_seconds_header.pl
 META.yml                                 Module meta-data (added by MakeMaker)
+SIGNATURE                                Public-key signature (added by MakeMaker)

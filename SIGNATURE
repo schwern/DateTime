@@ -1,0 +1,86 @@
+This file contains message digests of all files listed in MANIFEST,
+signed via the Module::Signature module, version 0.55.
+
+To verify the content in this distribution, first make sure you have
+Module::Signature installed, then type:
+
+    % cpansign -v
+
+It will check each file's integrity, as well as the signature's
+validity.  If "==> Signature verified OK! <==" is not displayed,
+the distribution may already have been compromised, and you should
+not run its Makefile.PL or Build.PL.
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+SHA1 c951898b770a16da2897d908ab6f9f72057bd570 CREDITS
+SHA1 1e4427b3c4511ef9c6ef692a2742cf3e733a8bfa Changes
+SHA1 80b9a32dc4b5e79109070a43e860b72a86508047 DateTime.xs
+SHA1 f235ba4160673bcb7c9d58c2f09dbc7fc0efadea LICENSE
+SHA1 db3abb6369358aa68d81d16820bf543b455c06a3 MANIFEST
+SHA1 c56ca5104ca123ce409197d6abc970d3ac99b8f2 MANIFEST.SKIP
+SHA1 68ee5b8700e6e090d2bcaf7f5a66fce8bc23d6e3 META.yml
+SHA1 b84fa0e85fbc24669be9b0c2056148f9b546464d Makefile.PL
+SHA1 c9301a379ff7bb5bca2878ac0a2fe9fb1e74ae45 README
+SHA1 bfc70fbe8fa29484452bea8c2ed4afd55218f2c2 TODO
+SHA1 2443f8177da7b9fa17e58568768f07da8671a981 leap_seconds.h
+SHA1 790553ec19c06613fb7dc339e116bd5992f98880 leaptab.txt
+SHA1 948150acfeaf13a18a0b2a8297b226f062cf0511 lib/DateTime.pm
+SHA1 ebb2dd4df2b1bd4c63d8c07ed8e445763b9551df lib/DateTime/Duration.pm
+SHA1 3166fafcd4b8121470e5395ef8e00564edd33af1 lib/DateTime/Helpers.pm
+SHA1 6bfc8fc10b9ae01458ab00f23eb967b734f073f5 lib/DateTime/Infinite.pm
+SHA1 6bcac55378e1f00e6eb31d4a121a25fcfc7efdb6 lib/DateTime/LeapSecond.pm
+SHA1 11f48b7b97235c4a522c657e28a225e7bc429444 lib/DateTimePP.pm
+SHA1 ac972deb16c18472b5d16f972fa53650be6d0b98 lib/DateTimePPExtra.pm
+SHA1 c443e7ef670552bf7ce25b2791a281f529e0580b ppport.h
+SHA1 122a4ebd803e128a85cb4ea6f92f38de321108ea t/00load.t
+SHA1 8b648ccc4b980620daa290b5e8c416102e0b947e t/01sanity.t
+SHA1 cf0d0f3c76243ecf6c53b6101edd0531f1288144 t/02last_day.t
+SHA1 52e2fea9d5898cf1f38164fe22f02f9e8e6e9f45 t/03components.t
+SHA1 e88f3b113dbfd2c0a5bf966f81e25942d39d52d8 t/04epoch.t
+SHA1 7723464e93d62748c480e77e06d7778b71f40aa3 t/05set.t
+SHA1 b997ce5cc82d209e091ab10fc3c10e6826c6f878 t/06add.t
+SHA1 753bd39a8d97cc7e1e21b80436cf1f6831191769 t/07compare.t
+SHA1 e22ede445127c6798c79c9ad7ab0c8e58730395d t/09greg.t
+SHA1 d7d631df269b79b0c78d132e44c1a9f564d873c1 t/10subtract.t
+SHA1 4b06e3880ab48c6c21ba0717e41f2433f1216afa t/11duration.t
+SHA1 6793f3328bb283932a07e08adae685a54518b514 t/12week.t
+SHA1 0e76ab7206c298e6b26f4dc5a215e3c875d5d5e7 t/13strftime.t
+SHA1 f258dc1ef5a0c2161713b3635b2f441398758b94 t/14locale.t
+SHA1 b05c8b49454480d969dd79cf49cdd0721e25e51e t/15jd.t
+SHA1 36eff70ecb577c029b1aca436fcbc4c3718201f8 t/16truncate.t
+SHA1 0424fe7819bff7dbd6cab79538a802961dace7ee t/17set_return.t
+SHA1 740aa153de67b9080cc6175830ec9b42a3a9dc10 t/18today.t
+SHA1 0a3adf270b369b602a4f08eedcfa627ed3e43beb t/19leap_second.t
+SHA1 209f9c611372fab34c59ca2b78fd6fe9e82e5f41 t/20infinite.t
+SHA1 35cf4e019013c3d6cedcbfc79b97613c8a41ec8c t/21bad_params.t
+SHA1 94896fc54f7aa3e94aced0702a4669c2c69121a2 t/22from_doy.t
+SHA1 375b80a6ba128264865fb71d0b1db275cf53dc8e t/23storable.t
+SHA1 aca95b712c73f5c6224094127efa35e422c117d1 t/24from_object.t
+SHA1 3819e023938cad29a646c51abf303f06ef461ece t/25add_subtract.t
+SHA1 c437ac1a906c8ea0235b76039d4ade633c0658ab t/26dt_leapsecond_pm.t
+SHA1 c98ebaf51814145970b4b9540b2cbbe209a6bf8e t/27delta.t
+SHA1 718ff98564e505f9345d389711d6d36080b9b6ce t/28dow.t
+SHA1 72f02f61f875a2a97f44e2ba25b07d3a5e9fbf1a t/29overload.t
+SHA1 a49f0ca8767c408531b615432af0a5cbe8715eb4 t/30future_tz.t
+SHA1 289029111866c6243dd291aff599f96afef13ed7 t/31formatter.t
+SHA1 c14154ed9bd988de060c6b9f8440fda92d137647 t/32leap_second2.t
+SHA1 86c4957200f306a6b30b30a839a05fbbf450a3d9 t/33seconds_offset.t
+SHA1 bba71a7db8f04d79714293b59bfc47695c35cc37 t/34set_tz.t
+SHA1 33c93ecf4c9fa84c2452be2331688f10e2f6a66b t/35rd_values.t
+SHA1 50cc2dac64a71d6a978ca331e715a8cabe0664ac t/36invalid_local.t
+SHA1 ae0781e588abeaa190126689cad93b558e815ef7 t/37local-add.t
+SHA1 69ad635c579d55e725ead71026f8367ab4dde37b t/38local-subtract.t
+SHA1 5463926117414ec4f0f1d600aec03d24d2eb0e24 t/39no-so.t
+SHA1 38c1cc264996e606146bead0c3c0520c74efa1b4 t/40leap-years.t
+SHA1 2bd8d1ef4ee18b05c6b0d718a30631c7c6074a99 t/pod-coverage.t
+SHA1 37307177c8305132ecc2c9b0778f53fa48f1691e t/pod.t
+SHA1 3be7c4d5a6e7093e3c5fc18f57fde3f3014d3991 tools/leap_seconds_header.pl
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (GNU/Linux)
+
+iD8DBQFGDTdy3Or3ZzQuifMRAikGAJsGkIoCvatg5/fJwxTvPAmjArL/FgCg3Aru
+UnUegeeGtWYvZaEZhG2NWDM=
+=vC25
+-----END PGP SIGNATURE-----

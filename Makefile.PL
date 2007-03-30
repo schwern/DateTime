@@ -34,7 +34,7 @@ unless (defined $no_xs)
         {
             next if $file eq '26dt_leapsecond_pm.t';
             next if $file eq '39no-so.t';
-            next if $file eq '99-pod.t';
+            next if $file !~ /^\d/;
 
             my $real_file = File::Spec->catfile( 't', $file );
 
@@ -69,7 +69,7 @@ sub write_makefile
                    clean        => { FILES => "test.c test.o $zz" },
                    CONFIGURE    => \&init,
 
-                   PREREQ_PM    => { 'DateTime::Locale'   => 0.31,
+                   PREREQ_PM    => { 'DateTime::Locale'   => 0.34,
                                      'DateTime::TimeZone' => 0.59,
                                      'Params::Validate'   => 0.76,
                                      'Pod::Man'           => 1.14,
@@ -77,6 +77,8 @@ sub write_makefile
                                      'Test::More'         => 0.34,
                                      'Time::Local'        => 1.04,
                                    },
+                   ( MM->can('signature_target') ? ( SIGN => 1 ) : () ),
+                   LICENSE      => 'perl',
                  );
 }
 
