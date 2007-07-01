@@ -10,7 +10,7 @@ use DateTime::Helpers;
 
 BEGIN
 {
-    $VERSION = '0.37';
+    $VERSION = '0.38';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -66,6 +66,8 @@ use overload ( 'fallback' => 1,
                '""'  => '_stringify',
                '-'   => '_subtract_overload',
                '+'   => '_add_overload',
+               'eq'  => '_string_equals_overload',
+               'ne'  => '_string_not_equals_overload',
              );
 
 # Have to load this after overloading is defined, after BEGIN blocks
@@ -1506,6 +1508,24 @@ sub _compare
     return 0;
 }
 
+sub _string_equals_overload
+{
+    my ( $class, $dt1, $dt2 ) = ref $_[0] ? ( undef, @_ ) : @_;
+
+    return unless
+        (    DateTime::Helpers::can( $dt1, 'utc_rd_values' )
+          && DateTime::Helpers::can( $dt2, 'utc_rd_values' )
+        );
+
+    $class ||= ref $dt1;
+    return ! $class->compare( $dt1, $dt2 );
+}
+
+sub _string_not_equals_overload
+{
+    return ! _string_equals_overload(@_);
+}
+
 sub _normalize_nanoseconds
 {
     use integer;
@@ -1796,7 +1816,7 @@ DateTime is a class for the representation of date/time combinations,
 and is part of the Perl DateTime project.  For details on this project
 please see L<http://datetime.perl.org/>.  The DateTime site has a FAQ
 which may help answer many "how do I do X?" questions.  The FAQ is at
-L<http://datetime.perl.org/faq.html>.
+L<http://datetime.perl.org/?FAQ>.
 
 It represents the Gregorian calendar, extended backwards in time
 before its creation (in 1582).  This is sometimes known as the
@@ -1877,7 +1897,7 @@ datetimes.
 =head2 Math
 
 If you are going to be using doing date math, please read the section
-L<How Datetime Math is Done|How Datetime Math is Done>.
+L<How Datetime Math is Done>.
 
 =head2 Time Zone Warning
 
@@ -2995,6 +3015,11 @@ following all do sensible things:
 Additionally, the fallback parameter is set to true, so other
 derivable operators (+=, -=, etc.) will work properly.  Do not expect
 increment (++) or decrement (--) to do anything useful.
+
+If you attempt to sort DateTime objects with non-DateTime.pm objects
+or scalars (strings, number, whatever) then an exception will be
+thrown. Using the string comparison operators, C<eq> or C<ne>, to
+compare a DateTime.pm always returns false.
 
 The module also overloads stringification to use the C<iso8601()>
 method.
