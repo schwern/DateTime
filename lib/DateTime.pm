@@ -10,7 +10,7 @@ use DateTime::Helpers;
 
 BEGIN
 {
-    $VERSION = '0.39';
+    $VERSION = '0.40';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -49,8 +49,8 @@ BEGIN
 }
 
 use DateTime::Duration;
-use DateTime::Locale;
-use DateTime::TimeZone 0.38;
+use DateTime::Locale 0.34;
+use DateTime::TimeZone 0.59;
 use Params::Validate qw( validate validate_pos SCALAR BOOLEAN HASHREF OBJECT );
 use Time::Local ();
 
@@ -241,6 +241,21 @@ sub new
     return $self;
 }
 
+# This method exists for the benefit of internal methods which create
+# a new object based on the current object, like set() and truncate().
+sub _new_from_self
+{
+    my $self = shift;
+
+    my %old = map { $_ => $self->$_() }
+        qw( year month day hour minute second nanosecond
+            locale time_zone );
+    $old{formatter} = $self->formatter()
+        if defined $self->formatter();
+
+    return (ref $self)->new( %old, @_ );
+}
+
 sub _handle_offset_modifier
 {
     my $self = shift;
@@ -426,38 +441,40 @@ sub _utc_hms
     return @{ $self->{utc_c} }{ qw( hour minute second ) };
 }
 
-sub from_epoch
 {
-    my $class = shift;
-    my %p = validate( @_,
-                      { epoch => { type => SCALAR },
-                        locale     => { type => SCALAR | OBJECT, optional => 1 },
-                        language   => { type => SCALAR | OBJECT, optional => 1 },
-                        time_zone  => { type => SCALAR | OBJECT, optional => 1 },
-                        formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
-                                        optional => 1 },
-                      }
-                    );
+    my $spec = { epoch => { type => SCALAR },
+                 locale     => { type => SCALAR | OBJECT, optional => 1 },
+                 language   => { type => SCALAR | OBJECT, optional => 1 },
+                 time_zone  => { type => SCALAR | OBJECT, optional => 1 },
+                 formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
+                                 optional => 1 },
+               };
 
-    my %args;
+    sub from_epoch
+    {
+        my $class = shift;
+        my %p = validate( @_, $spec );
 
-    # Because epoch may come from Time::HiRes
-    my $fraction = $p{epoch} - int( $p{epoch} );
-    $args{nanosecond} = int( $fraction * MAX_NANOSECONDS )
-        if $fraction;
+        my %args;
 
-    # Note, for very large negative values this may give a blatantly
-    # wrong answer.
-    @args{ qw( second minute hour day month year ) } =
-        ( gmtime( int delete $p{epoch} ) )[ 0..5 ];
-    $args{year} += 1900;
-    $args{month}++;
+        # Because epoch may come from Time::HiRes
+        my $fraction = $p{epoch} - int( $p{epoch} );
+        $args{nanosecond} = int( $fraction * MAX_NANOSECONDS )
+            if $fraction;
 
-    my $self = $class->new( %p, %args, time_zone => 'UTC' );
+        # Note, for very large negative values this may give a
+        # blatantly wrong answer.
+        @args{ qw( second minute hour day month year ) } =
+            ( gmtime( int delete $p{epoch} ) )[ 0..5 ];
+        $args{year} += 1900;
+        $args{month}++;
 
-    $self->set_time_zone( $p{time_zone} ) if exists $p{time_zone};
+        my $self = $class->new( %p, %args, time_zone => 'UTC' );
 
-    return $self;
+        $self->set_time_zone( $p{time_zone} ) if exists $p{time_zone};
+
+        return $self;
+    }
 }
 
 # use scalar time in case someone's loaded Time::Piece
@@ -465,59 +482,61 @@ sub now { shift->from_epoch( epoch => (scalar time), @_ ) }
 
 sub today { shift->now(@_)->truncate( to => 'day' ) }
 
-sub from_object
 {
-    my $class = shift;
-    my %p = validate( @_,
-                      { object => { type => OBJECT,
-                                    can => 'utc_rd_values',
-                                  },
-                        locale     => { type => SCALAR | OBJECT, optional => 1 },
-                        language   => { type => SCALAR | OBJECT, optional => 1 },
-                        formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
-                                        optional => 1 },
-                      },
-                    );
+    my $spec = { object => { type => OBJECT,
+                             can => 'utc_rd_values',
+                           },
+                 locale     => { type => SCALAR | OBJECT, optional => 1 },
+                 language   => { type => SCALAR | OBJECT, optional => 1 },
+                 formatter  => { type => SCALAR | OBJECT, can => 'format_datetime',
+                                 optional => 1 },
+               };
 
-    my $object = delete $p{object};
-
-    my ( $rd_days, $rd_secs, $rd_nanosecs ) = $object->utc_rd_values;
-
-    # A kludge because until all calendars are updated to return all
-    # three values, $rd_nanosecs could be undef
-    $rd_nanosecs ||= 0;
-
-    # This is a big hack to let _seconds_as_components operate naively
-    # on the given value.  If the object _is_ on a leap second, we'll
-    # add that to the generated seconds value later.
-    my $leap_seconds = 0;
-    if ( $object->can('time_zone') && ! $object->time_zone->is_floating
-         && $rd_secs > 86399 && $rd_secs <= $class->_day_length($rd_days) )
+    sub from_object
     {
-        $leap_seconds = $rd_secs - 86399;
-        $rd_secs -= $leap_seconds;
+        my $class = shift;
+        my %p = validate( @_, $spec );
+
+        my $object = delete $p{object};
+
+        my ( $rd_days, $rd_secs, $rd_nanosecs ) = $object->utc_rd_values;
+
+        # A kludge because until all calendars are updated to return all
+        # three values, $rd_nanosecs could be undef
+        $rd_nanosecs ||= 0;
+
+        # This is a big hack to let _seconds_as_components operate naively
+        # on the given value.  If the object _is_ on a leap second, we'll
+        # add that to the generated seconds value later.
+        my $leap_seconds = 0;
+        if ( $object->can('time_zone') && ! $object->time_zone->is_floating
+             && $rd_secs > 86399 && $rd_secs <= $class->_day_length($rd_days) )
+        {
+            $leap_seconds = $rd_secs - 86399;
+            $rd_secs -= $leap_seconds;
+        }
+
+        my %args;
+        @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
+        @args{ qw( hour minute second ) } =
+            $class->_seconds_as_components($rd_secs);
+        $args{nanosecond} = $rd_nanosecs;
+
+        $args{second} += $leap_seconds;
+
+        my $new = $class->new( %p, %args, time_zone => 'UTC' );
+
+        if ( $object->can('time_zone') )
+        {
+            $new->set_time_zone( $object->time_zone );
+        }
+        else
+        {
+            $new->set_time_zone( 'floating' );
+        }
+
+        return $new;
     }
-
-    my %args;
-    @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
-    @args{ qw( hour minute second ) } =
-        $class->_seconds_as_components($rd_secs);
-    $args{nanosecond} = $rd_nanosecs;
-
-    $args{second} += $leap_seconds;
-
-    my $new = $class->new( %p, %args, time_zone => 'UTC' );
-
-    if ( $object->can('time_zone') )
-    {
-        $new->set_time_zone( $object->time_zone );
-    }
-    else
-    {
-        $new->set_time_zone( 'floating' );
-    }
-
-    return $new;
 }
 
 my $LastDayOfMonthValidate = { %$NewValidate };
@@ -1321,123 +1340,126 @@ sub subtract { return shift->subtract_duration( DateTime::Duration->new(@_) ) }
 
 sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 
-sub add_duration
 {
-    my $self = shift;
-    my ($dur) = validate_pos( @_, { isa => 'DateTime::Duration' } );
-
-    # simple optimization
-    return $self if $dur->is_zero;
-
-    my %deltas = $dur->deltas;
-
-    # This bit isn't quite right since DateTime::Infinite::Future -
-    # infinite duration should NaN
-    foreach my $val ( values %deltas )
+    my @spec = ( { isa => 'DateTime::Duration' } );
+    sub add_duration
     {
-        my $inf;
-        if ( $val == INFINITY )
+        my $self = shift;
+        my ($dur) = validate_pos( @_, @spec );
+
+        # simple optimization
+        return $self if $dur->is_zero;
+
+        my %deltas = $dur->deltas;
+
+        # This bit isn't quite right since DateTime::Infinite::Future -
+        # infinite duration should NaN
+        foreach my $val ( values %deltas )
         {
-            $inf = DateTime::Infinite::Future->new;
-        }
-        elsif ( $val == NEG_INFINITY )
-        {
-            $inf = DateTime::Infinite::Past->new;
-        }
+            my $inf;
+            if ( $val == INFINITY )
+            {
+                $inf = DateTime::Infinite::Future->new;
+            }
+            elsif ( $val == NEG_INFINITY )
+            {
+                $inf = DateTime::Infinite::Past->new;
+            }
 
-        if ($inf)
-        {
-            %$self = %$inf;
-            bless $self, ref $inf;
+            if ($inf)
+            {
+                %$self = %$inf;
+                bless $self, ref $inf;
 
-            return $self;
-        }
-    }
-
-    return $self if $self->is_infinite;
-
-    if ( $deltas{days} )
-    {
-        $self->{local_rd_days} += $deltas{days};
-
-        $self->{utc_year} += int( $deltas{days} / 365 ) + 1;
-    }
-
-    if ( $deltas{months} )
-    {
-        # For preserve mode, if it is the last day of the month, make
-        # it the 0th day of the following month (which then will
-        # normalize back to the last day of the new month).
-        my ($y, $m, $d) = ( $dur->is_preserve_mode ?
-                            $self->_rd2ymd( $self->{local_rd_days} + 1 ) :
-                            $self->_rd2ymd( $self->{local_rd_days} )
-                          );
-
-        $d -= 1 if $dur->is_preserve_mode;
-
-        if ( ! $dur->is_wrap_mode && $d > 28 )
-        {
-            # find the rd for the last day of our target month
-            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months} + 1, 0 );
-
-            # what day of the month is it? (discard year and month)
-            my $last_day = ($self->_rd2ymd( $self->{local_rd_days} ))[2];
-
-            # if our original day was less than the last day,
-            # use that instead
-            $self->{local_rd_days} -= $last_day - $d if $last_day > $d;
-        }
-        else
-        {
-            $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
+                return $self;
+            }
         }
 
-        $self->{utc_year} += int( $deltas{months} / 12 ) + 1;
-    }
+        return $self if $self->is_infinite;
 
-    if ( $deltas{days} || $deltas{months} )
-    {
-        $self->_calc_utc_rd;
-
-        $self->_handle_offset_modifier( $self->second );
-    }
-
-    if ( $deltas{minutes} )
-    {
-        $self->{utc_rd_secs} += $deltas{minutes} * 60;
-
-        # This intentionally ignores leap seconds
-        $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
-    }
-
-    if ( $deltas{seconds} || $deltas{nanoseconds} )
-    {
-        $self->{utc_rd_secs} += $deltas{seconds};
-
-        if ( $deltas{nanoseconds} )
+        if ( $deltas{days} )
         {
-            $self->{rd_nanosecs} += $deltas{nanoseconds};
-            $self->_normalize_nanoseconds( $self->{utc_rd_secs}, $self->{rd_nanosecs} );
+            $self->{local_rd_days} += $deltas{days};
+
+            $self->{utc_year} += int( $deltas{days} / 365 ) + 1;
         }
 
-        $self->_normalize_seconds;
+        if ( $deltas{months} )
+        {
+            # For preserve mode, if it is the last day of the month, make
+            # it the 0th day of the following month (which then will
+            # normalize back to the last day of the new month).
+            my ($y, $m, $d) = ( $dur->is_preserve_mode ?
+                                $self->_rd2ymd( $self->{local_rd_days} + 1 ) :
+                                $self->_rd2ymd( $self->{local_rd_days} )
+                              );
 
-        # This might be some big number much bigger than 60, but
-        # that's ok (there are tests in 19leap_second.t to confirm
-        # that)
-        $self->_handle_offset_modifier( $self->second + $deltas{seconds} );
+            $d -= 1 if $dur->is_preserve_mode;
+
+            if ( ! $dur->is_wrap_mode && $d > 28 )
+            {
+                # find the rd for the last day of our target month
+                $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months} + 1, 0 );
+
+                # what day of the month is it? (discard year and month)
+                my $last_day = ($self->_rd2ymd( $self->{local_rd_days} ))[2];
+
+                # if our original day was less than the last day,
+                # use that instead
+                $self->{local_rd_days} -= $last_day - $d if $last_day > $d;
+            }
+            else
+            {
+                $self->{local_rd_days} = $self->_ymd2rd( $y, $m + $deltas{months}, $d );
+            }
+
+            $self->{utc_year} += int( $deltas{months} / 12 ) + 1;
+        }
+
+        if ( $deltas{days} || $deltas{months} )
+        {
+            $self->_calc_utc_rd;
+
+            $self->_handle_offset_modifier( $self->second );
+        }
+
+        if ( $deltas{minutes} )
+        {
+            $self->{utc_rd_secs} += $deltas{minutes} * 60;
+
+            # This intentionally ignores leap seconds
+            $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
+        }
+
+        if ( $deltas{seconds} || $deltas{nanoseconds} )
+        {
+            $self->{utc_rd_secs} += $deltas{seconds};
+
+            if ( $deltas{nanoseconds} )
+            {
+                $self->{rd_nanosecs} += $deltas{nanoseconds};
+                $self->_normalize_nanoseconds( $self->{utc_rd_secs}, $self->{rd_nanosecs} );
+            }
+
+            $self->_normalize_seconds;
+
+            # This might be some big number much bigger than 60, but
+            # that's ok (there are tests in 19leap_second.t to confirm
+            # that)
+            $self->_handle_offset_modifier( $self->second + $deltas{seconds} );
+        }
+
+        my $new =
+            (ref $self)->from_object
+                ( object => $self,
+                  locale => $self->{locale},
+                  ( $self->{formatter} ? ( formatter => $self->{formatter} ) : () ),
+                 );
+
+        %$self = %$new;
+
+        return $self;
     }
-
-    my $new =
-        (ref $self)->from_object
-            ( object => $self,
-              locale => $self->{locale},
-              ( $self->{formatter} ? ( formatter => $self->{formatter} ) : () ),
-             );
-
-    %$self = %$new;
-
-    return $self;
 }
 
 sub _compare_overload
@@ -1559,12 +1581,7 @@ sub set
     my $self = shift;
     my %p = validate( @_, $SetValidate );
 
-    my %old_p =
-        ( map { $_ => $self->$_() }
-          qw( year month day hour minute second nanosecond locale time_zone )
-        );
-
-    my $new_dt = (ref $self)->new( %old_p, %p );
+    my $new_dt = $self->_new_from_self(%p);
 
     %$self = %$new_dt;
 
@@ -1583,45 +1600,51 @@ sub set_locale { $_[0]->set( locale => $_[1] ) }
 
 sub set_formatter { $_[0]->{formatter} = $_[1] }
 
-sub truncate
 {
-    my $self = shift;
-    my %p = validate( @_,
-                      { to =>
-                        { regex => qr/^(?:year|month|week|day|hour|minute|second)$/ },
-                      },
-                    );
+    my %TruncateDefault = ( month  => 1,
+                            day    => 1,
+                            hour   => 0,
+                            minute => 0,
+                            second => 0,
+                            nanosecond => 0,
+                          );
+    my $re = join '|', 'year', 'week', grep { $_ ne 'nanosecond' } keys %TruncateDefault;
+    my $spec = { to => { regex => qr/^(?:$re)/ } };
 
-    my %new = ( locale    => $self->{locale},
-                time_zone => $self->{tz},
-              );
-
-    if ( $p{to} eq 'week' )
+    sub truncate
     {
-        my $day_diff = $self->day_of_week - 1;
+        my $self = shift;
+        my %p = validate( @_, $spec );
 
-        if ($day_diff)
+        my %new;
+        if ( $p{to} eq 'week' )
         {
-            $self->add( days => -1 * $day_diff );
+            my $day_diff = $self->day_of_week - 1;
+
+            if ($day_diff)
+            {
+                $self->add( days => -1 * $day_diff );
+            }
+
+            return $self->truncate( to => 'day' );
+        }
+        else
+        {
+            my $truncate;
+            foreach my $f ( qw( year month day hour minute second nanosecond ) )
+            {
+                $new{$f} = $truncate ? $TruncateDefault{$f} : $self->$f();
+
+                $truncate = 1 if $p{to} eq $f;
+            }
         }
 
-        return $self->truncate( to => 'day' );
+        my $new_dt = $self->_new_from_self(%new);
+
+        %$self = %$new_dt;
+
+        return $self;
     }
-    else
-    {
-	foreach my $f ( qw( year month day hour minute second ) )
-	{
-	    $new{$f} = $self->$f();
-
-	    last if $p{to} eq $f;
-	}
-    }
-
-    my $new_dt = (ref $self)->new(%new);
-
-    %$self = %$new_dt;
-
-    return $self;
 }
 
 sub set_time_zone
@@ -3273,7 +3296,7 @@ this.  This will be fixed (somehow) in future versions.
 =head1 SUPPORT
 
 Support for this module is provided via the datetime@perl.org email
-list.  See http://lists.perl.org/ for more details.
+list. See http://datetime.perl.org/?MailingList for details.
 
 Please submit bugs to the CPAN RT system at
 http://rt.cpan.org/NoAuth/ReportBug.html?Queue=datetime or via email
