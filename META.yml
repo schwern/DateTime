@@ -1,9 +1,9 @@
 --- #YAML:1.0
 name:                DateTime
-version:             0.41
+version:             0.42
 abstract:            DateTime base objects
 license:             perl
-generated_by:        ExtUtils::MakeMaker version 6.33
+generated_by:        ExtUtils::MakeMaker version 6.36
 distribution_type:   module
 requires:     
     DateTime::Locale:              0.35

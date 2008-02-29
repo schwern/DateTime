@@ -10,11 +10,12 @@ use DateTime::Helpers;
 
 BEGIN
 {
-    $VERSION = '0.41';
+    $VERSION = '0.42';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
     {
+        local $@;
 	eval
 	{
 	    if ( $] >= 5.006 )
@@ -174,7 +175,7 @@ sub new
     my $class = shift;
     my %p = validate( @_, $NewValidate );
 
-    Carp::croak( "Invalid day of month (day = $p{day} - month = $p{month})\n" )
+    Carp::croak( "Invalid day of month (day = $p{day} - month = $p{month} - year = $p{year})\n" )
         if $p{day} > $class->_month_length( $p{year}, $p{month} );
 
     my $self = bless {}, $class;
@@ -1008,11 +1009,11 @@ sub epoch
     my @hms = $self->_utc_hms;
 
     $self->{utc_c}{epoch} =
-        eval { Time::Local::timegm_nocheck( ( reverse @hms ),
-                                            $day,
-                                            $month - 1,
-                                            $year,
-                                          ) };
+        Time::Local::timegm_nocheck( ( reverse @hms ),
+                                     $day,
+                                     $month - 1,
+                                     $year,
+                                   );
 
     return $self->{utc_c}{epoch};
 }
@@ -1098,7 +1099,8 @@ sub subtract_datetime
             # it's a 23 hour (local) day
             if ( $bigger->is_dst
                  &&
-                 do { my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
+                 do { local $@;
+                      my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
                       $prev_day && ! $prev_day->is_dst ? 1 : 0 }
                );
 
@@ -1106,7 +1108,8 @@ sub subtract_datetime
             # it's a 25 hour (local) day
             if ( ! $bigger->is_dst
                  &&
-                 do { my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
+                 do { local $@;
+                      my $prev_day = eval { $bigger->clone->subtract( days => 1 ) };
                       $prev_day && $prev_day->is_dst ? 1 : 0 }
                );
     }
@@ -2555,6 +2558,17 @@ Yes, now we can know "ni3 na4 bian1 ji2dian3?"
 Set the formatter for the object. See L<Formatters And
 Stringification> for details.
 
+=back
+
+=head3 Math Methods
+
+Like the set methods, math related methods always return the object
+itself, to allow for chaining:
+
+  $dt->add( days => 1 )->subtract( seconds => 1 );
+
+=over 4
+
 =item * add_duration( $duration_object )
 
 This method adds a C<DateTime::Duration> to the current datetime.  See
@@ -2618,9 +2632,9 @@ positive (or zero) duration>.
 =item * delta_ms( $datetime )
 
 Returns a duration which contains only minutes and seconds.  Any day
-and month differences to minutes are converted to minutes and seconds.
-
-B<Always return a positive (or zero) duration>.
+and month differences to minutes are converted to minutes and
+seconds. This method also B<always return a positive (or zero)
+duration>.
 
 =item * subtract_datetime_absolute( $datetime )
 
