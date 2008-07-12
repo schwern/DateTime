@@ -1,9 +1,11 @@
 --- #YAML:1.0
 name:                DateTime
-version:             0.4302
+version:             0.4303
 abstract:            DateTime base objects
 license:             perl
-generated_by:        ExtUtils::MakeMaker version 6.36
+author:              
+    - Dave Rolsky <autarch@urth.org>
+generated_by:        ExtUtils::MakeMaker version 6.44
 distribution_type:   module
 requires:     
     DateTime::Locale:              0.4
@@ -14,7 +16,5 @@ requires:
     Test::More:                    0.34
     Time::Local:                   1.04
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
-    version: 1.2
-author:
-    - Dave Rolsky <autarch@urth.org>
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3
