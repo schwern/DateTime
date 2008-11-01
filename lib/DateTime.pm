@@ -12,7 +12,7 @@ our $VERSION;
 
 BEGIN
 {
-    $VERSION = '0.4305';
+    $VERSION = '0.44';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -24,6 +24,9 @@ BEGIN
             XSLoader::load( 'DateTime', $DateTime::VERSION );
 
             $DateTime::IsPurePerl = 0;
+
+            require Time::y2038;
+            Time::y2038->import('timegm');
 	};
 
 	die $@ if $@ && $@ !~ /object version|loadable object/;
@@ -39,6 +42,11 @@ BEGIN
     else
     {
         require DateTimePP;
+
+        require Time::Local;
+        Time::Local->import('timegm_nocheck');
+
+        *timegm = sub { goto &timegm_nocheck };
     }
 }
 
@@ -46,7 +54,6 @@ use DateTime::Duration;
 use DateTime::Locale 0.40;
 use DateTime::TimeZone 0.59;
 use Params::Validate qw( validate validate_pos SCALAR BOOLEAN HASHREF OBJECT );
-use Time::Local ();
 
 # for some reason, overloading doesn't work unless fallback is listed
 # early.
@@ -1011,7 +1018,7 @@ sub mjd { $_[0]->jd - 2_400_000.5 }
           # yy is a weird special case, where it must be exactly 2 digits
           qr/yy/       => sub { my $year = $_[0]->year();
                                 $year = substr( $year, -2, 2 ) if length $year > 2;
-                                $_[0]->_zero_padded_number( 2, $year ) },
+                                $_[0]->_zero_padded_number( 'yy', $year ) },
           qr/y/        => sub { $_[0]->year() },
           qr/(u+)/     => sub { $_[0]->_zero_padded_number( $1, $_[0]->year() ) },
           qr/(Y+)/     => sub { $_[0]->_zero_padded_number( $1, $_[0]->week_year() ) },
@@ -1188,11 +1195,11 @@ sub epoch
     my @hms = $self->_utc_hms;
 
     $self->{utc_c}{epoch} =
-        Time::Local::timegm_nocheck( ( reverse @hms ),
-                                     $day,
-                                     $month - 1,
-                                     $year,
-                                   );
+        timegm( ( reverse @hms ),
+                $day,
+                $month - 1,
+                $year - 1900,
+              );
 
     return $self->{utc_c}{epoch};
 }
@@ -1999,9 +2006,9 @@ DateTime - A date and time object
   $day_name    = $dt->day_name;   # Monday, Tuesday, ...
   $day_abbr    = $dt->day_abbr;   # Mon, Tue, ...
 
+  # May not work for all possible datetime, see the docs on this
+  # method for more details.
   $epoch_time  = $dt->epoch;
-  # may return undef if the datetime is outside the range that is
-  # representable by your OS's epoch system.
 
   $dt2 = $dt + $duration_object;
 
@@ -2359,7 +2366,7 @@ Returns a string, either "BCE" or "CE", according to the year.
 
 Returns a string containing the year immediately followed by its era
 abbreviation.  The year is the absolute value of C<ce_year()>, so that
-year 1 is "1BC" and year 0 is "1AD".
+year 1 is "1AD" and year 0 is "1BC".
 
 =item * $dt->year_with_christian_era()
 
@@ -2373,7 +2380,7 @@ era name.
 
 =item * $dt->month()
 
-=item * mon
+=item * $dt->mon()
 
 Returns the month of the year, from 1..12.
 
@@ -2643,19 +2650,26 @@ is implemented using C<Time::Local>, which uses the Unix epoch even on
 machines with a different epoch (such as MacOS).  Datetimes before the
 start of the epoch will be returned as a negative number.
 
-This return value from this method is always an integer.
+The return value from this method is always an integer.
 
 Since the epoch does not account for leap seconds, the epoch time for
 1972-12-31T23:59:60 (UTC) is exactly the same as that for
 1973-01-01T00:00:00.
 
-Epoch times cannot represent many dates on most platforms, and this
-method may simply return undef in some cases.
+If you have the XS version of C<DateTime.pm> installed, it uses
+C<Time::y2038> to calculate the epoch. C<Time::y2038> can handle epoch
+values approximately 142 million years into the future and past,
+regardless of whether your system has native support for such epochs.
 
-Using your system's epoch time may be error-prone, since epoch times
-have such a limited range on 32-bit machines.  Additionally, the fact
-that different operating systems have different epoch beginnings is
-another source of possible bugs.
+If you have the pure Perl version C<DateTime.pm>, it uses
+C<Time::Local>, which may or may not handle epochs before 1904 or
+after 2038.If you need epoch support outside of these ranges, it is
+strongly recommended that you make sure you have the XS version of
+C<DateTime.pm> installed.
+
+You can check which you have using the following code snippet:
+
+  perl -MDateTime -le 'print $DateTime::IsPurePerl ? q{no XS} : q{has XS}'
 
 =item * $dt->hires_epoch()
 
