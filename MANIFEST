@@ -57,6 +57,7 @@ t/38local-subtract.t
 t/39no-so.t
 t/40leap-years.t
 t/41cldr_format.t
+t/42duration_class.t
 t/pod-coverage.t
 t/pod.t
 TODO
