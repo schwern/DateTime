@@ -12,7 +12,7 @@ our $VERSION;
 
 BEGIN
 {
-    $VERSION = '0.46';
+    $VERSION = '0.47';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -1022,6 +1022,10 @@ sub mjd { $_[0]->jd - 2_400_000.5 }
           qr/QQQ/   => 'quarter_abbr',
           qr/(QQ?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->quarter() ) },
 
+          qr/qqqq/  => sub { $_[0]->{locale}->quarter_stand_alone_wide()->[ $_[0]->quarter_0() ] },
+          qr/qqq/   => sub { $_[0]->{locale}->quarter_stand_alone_abbreviated()->[ $_[0]->quarter_0() ] },
+          qr/(qq?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->quarter() ) },
+
           qr/MMMMM/ => sub { $_[0]->{locale}->month_format_narrow->[ $_[0]->month_0() ] },
           qr/MMMM/  => 'month_name',
           qr/MMM/   => 'month_abbr',
@@ -1061,7 +1065,7 @@ sub mjd { $_[0]->jd - 2_400_000.5 }
           qr/(HH?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->hour() ) },
           qr/(KK?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->hour_12_0() ) },
           qr/(kk?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->hour_1() ) },
-          qr/(jj?)/ => sub { my $h = $_[0]->{locale}->prefers_24_hour_time() ? $_[0]->hour_12() : $_[0]->hour();
+          qr/(jj?)/ => sub { my $h = $_[0]->{locale}->prefers_24_hour_time() ? $_[0]->hour() : $_[0]->hour_12();
                              $_[0]->_zero_padded_number( $1, $h ) },
 
           qr/(mm?)/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->minute() ) },
