@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 124;
+use Test::More tests => 127;
 
 use DateTime;
 
@@ -181,12 +181,12 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2003, month => 4, day => 6,
                              hour => 1, minute => 58,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dt2 = DateTime->new( year => 2003, month => 4, day => 6,
                              hour => 3, minute => 1,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dur = $dt2->subtract_datetime($dt1);
@@ -207,12 +207,12 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2003, month => 4, day => 5,
                              hour => 1, minute => 58,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dt2 = DateTime->new( year => 2003, month => 4, day => 6,
                              hour => 3, minute => 1,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dur = $dt2->subtract_datetime($dt1);
@@ -260,12 +260,12 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2003, month => 4, day => 6,
                              hour => 3, minute => 1,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dt2 = DateTime->new( year => 2003, month => 4, day => 7,
                              hour => 3, minute => 2,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dur = $dt2->subtract_datetime($dt1);
@@ -291,12 +291,12 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2003, month => 4, day => 5,
                              hour => 1, minute => 58,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dt2 = DateTime->new( year => 2003, month => 4, day => 7,
                              hour => 2, minute => 1,
-                             time_zone => "America/Chicago",
+                             time_zone => 'America/Chicago',
                            );
 
     my $dur = $dt2->subtract_datetime($dt1);
@@ -423,11 +423,11 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2005, month => 4, day => 3,
                              hour => 7, minute => 0,
-                             time_zone => "America/New_York" );
+                             time_zone => 'America/New_York' );
 
     my $dt2 = DateTime->new( year => 2005, month => 4, day => 3,
                              hour => 8, minute => 0,
-                             time_zone => "America/New_York" );
+                             time_zone => 'America/New_York' );
 
     my $dur = $dt2->subtract_datetime($dt1);
     my ( $minutes, $seconds ) = $dur->in_units( 'minutes','seconds' );
@@ -442,8 +442,61 @@ use DateTime;
 {
     my $dt1 = DateTime->new( year => 2005, month => 4, day => 3,
                              hour => 1, minute => 0,
-                             time_zone => "America/New_York" );
+                             time_zone => 'America/New_York' );
 
     my $dur = $dt1->subtract_datetime($dt1);
     ok( $dur->is_zero, 'dst change date (with dst) - itself, duration is zero' );
 }
+
+# This tests a bug where one of the datetimes is changing DST, and the
+# other is not. In this case, no "adjustments" (aka hacks) are made in
+# subtract_datetime, and it just gives the "UTC difference".
+{
+    # This is UTC-4
+    my $dt1 = DateTime->new( year => 2009, month => 3, day => 9,
+                             time_zone => 'America/New_York' );
+    # This is UTC+8
+    my $dt2 = DateTime->new( year => 2009, month => 3, day => 9,
+                             time_zone => 'Asia/Hong_Kong' );
+
+    my $dur = $dt1->subtract_datetime($dt2);
+
+    is( $dur->delta_minutes, 720,
+        'subtraction the day after a DST change in one zone, where the other datetime is in a different zone' );
+}
+
+{
+    # This is UTC-5
+    my $dt1 = DateTime->new( year => 2009, month => 3, day => 8,
+                             hour => 1,
+                             time_zone => 'America/New_York' );
+    # This is UTC+8
+    my $dt2 = DateTime->new( year => 2009, month => 3, day => 8,
+                             hour => 1,
+                             time_zone => 'Asia/Hong_Kong' );
+
+    my $dur = $dt1->subtract_datetime($dt2);
+
+    is( $dur->delta_minutes, 780,
+        'subtraction the day of a DST change in one zone (before the change),'
+        . ' where the other datetime is in a different zone' );
+}
+
+
+{
+    # This is UTC-4
+    my $dt1 = DateTime->new( year => 2009, month => 3, day => 8,
+                             hour => 4,
+                             time_zone => 'America/New_York' );
+    # This is UTC+8
+    my $dt2 = DateTime->new( year => 2009, month => 3, day => 8,
+                             hour => 4,
+                             time_zone => 'Asia/Hong_Kong' );
+
+    my $dur = $dt1->subtract_datetime($dt2);
+
+    is( $dur->delta_minutes, 720,
+        'subtraction the day of a DST change in one zone (after the change),'
+        . ' where the other datetime is in a different zone' );
+}
+

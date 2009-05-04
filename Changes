@@ -1,3 +1,27 @@
+0.48   2009-05-04
+
+- Some of the accessors (the "main" ones like year(), month(), day(),
+  etc) now warn if they are passed a value. Patch from Shawn
+  Moore. Fixes RT #6979.
+
+- DateTime::Duration expected DateTime to be loaded and used some
+  constants from it, but did not explicitly "use DateTime". Reported
+  by Jeff Kubina. RT #44740.
+
+- The CLDR formatting for "c" and "cc" was incorrectly using the local
+  day of the week. This meant that it gave the wrong result for
+  locales where Monday is not considered the first day of the
+  week. Reported by Maros Kollar. RT #45007.
+
+- DateTime->from_epoch did not allow an object which overloaded
+  numification as the epoch value. Patch by Michael Schwern. RT
+  #45653.
+
+- Fixed how datetime subtraction is handled for some cases around DST
+  changes. This had been improved back in 0.30, but there were still
+  bugs. RT #45235.
+
+
 0.47   2009-03-01
 
 - The handling of CLDR format 'j' and 'jj' was backwards, using 24
