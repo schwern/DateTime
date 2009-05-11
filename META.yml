@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               DateTime
-version:            0.49
+version:            0.50
 abstract:           DateTime base objects
 author:
     - Dave Rolsky <autarch@urth.org>
