@@ -1,28 +1,44 @@
---- #YAML:1.0
-name:               DateTime
-version:            0.50
-abstract:           DateTime base objects
+---
+name: DateTime
+version: 0.51
 author:
-    - Dave Rolsky <autarch@urth.org>
-license:            perl
-distribution_type:  module
-configure_requires:
-    ExtUtils::MakeMaker:  0
+  - 'Dave Rolsky <autarch@urth.org>'
+abstract: A date and time object
+license: perl
+resources:
+  bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=DateTime
+  homepage: http://datetime.perl.org/
+  license: http://dev.perl.org/licenses/
+  repository: https://perl-date-time.svn.sourceforge.net/svnroot/perl-date-time
 build_requires:
-    ExtUtils::MakeMaker:  0
+  Pod::Man: 1.14
+  Test::More: 0.34
 requires:
-    DateTime::Locale:    0.41
-    DateTime::TimeZone:  0.59
-    Params::Validate:    0.76
-    Pod::Man:            1.14
-    Scalar::Util:        0
-    Test::More:          0.34
-    Time::Local:         1.04
-no_index:
-    directory:
-        - t
-        - inc
-generated_by:       ExtUtils::MakeMaker version 6.50
+  DateTime::Locale: 0.41
+  DateTime::TimeZone: 0.59
+  Params::Validate: 0.76
+  Scalar::Util: 0
+  Time::Local: 1.04
+configure_requires:
+  Module::Build: 0.35
+provides:
+  DateTime:
+    file: lib/DateTime.pm
+    version: 0.51
+  DateTime::Duration:
+    file: lib/DateTime/Duration.pm
+  DateTime::Helpers:
+    file: lib/DateTime/Helpers.pm
+  DateTime::Infinite:
+    file: lib/DateTime/Infinite.pm
+  DateTime::Infinite::Future:
+    file: lib/DateTime/Infinite.pm
+  DateTime::Infinite::Past:
+    file: lib/DateTime/Infinite.pm
+  DateTime::LeapSecond:
+    file: lib/DateTime/LeapSecond.pm
+    version: 0.05
+generated_by: Module::Build version 0.35
 meta-spec:
-    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4

@@ -1,9 +1,11 @@
+Build.PL
+c/leap_seconds.h
+c/ppport.h
 Changes
 CREDITS
-DateTime.xs
-leap_seconds.h
 leaptab.txt
 lib/DateTime.pm
+lib/DateTime.xs
 lib/DateTime/Duration.pm
 lib/DateTime/Helpers.pm
 lib/DateTime/Infinite.pm
@@ -11,10 +13,8 @@ lib/DateTime/LeapSecond.pm
 lib/DateTimePP.pm
 lib/DateTimePPExtra.pm
 LICENSE
-Makefile.PL
 MANIFEST			This list of files
-MANIFEST.SKIP
-ppport.h
+META.yml
 README
 t/00load.t
 t/01sanity.t
@@ -62,5 +62,4 @@ t/pod-coverage.t
 t/pod.t
 TODO
 tools/leap_seconds_header.pl
-META.yml                                 Module meta-data (added by MakeMaker)
-SIGNATURE                                Public-key signature (added by MakeMaker)
+SIGNATURE    Added here by Module::Build

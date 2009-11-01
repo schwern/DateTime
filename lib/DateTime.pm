@@ -12,7 +12,7 @@ our $VERSION;
 
 BEGIN
 {
-    $VERSION = '0.50';
+    $VERSION = '0.51';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -1039,8 +1039,9 @@ sub mjd { $_[0]->jd - 2_400_000.5 }
           qr/(y{3,5})/ => sub { $_[0]->_zero_padded_number( $1, $_[0]->year() ) },
           # yy is a weird special case, where it must be exactly 2 digits
           qr/yy/       => sub { my $year = $_[0]->year();
-                                $year = substr( $year, -2, 2 ) if length $year > 2;
-                                $_[0]->_zero_padded_number( 'yy', $year ) },
+                                my $y2 = substr( $year, -2, 2 ) if length $year > 2;
+                                $y2 *= -1 if $year < 0;
+                                $_[0]->_zero_padded_number( 'yy', $y2 ) },
           qr/y/        => sub { $_[0]->year() },
           qr/(u+)/     => sub { $_[0]->_zero_padded_number( $1, $_[0]->year() ) },
           qr/(Y+)/     => sub { $_[0]->_zero_padded_number( $1, $_[0]->week_year() ) },
@@ -2117,11 +2118,6 @@ constructing a DateTime object.  There is also a C<DefaultLocale()>
 class method which may be used to set the default locale for all
 DateTime objects created.  If this is not set, then "en_US" is used.
 
-Some locales may return data as Unicode.  When using Perl 5.6.0 or
-greater, this will be a native Perl Unicode string.  When using older
-Perls, this will be a sequence of bytes representing the Unicode
-character.
-
 =head2 Floating DateTimes
 
 The default time zone for new DateTime objects, except where stated
@@ -2957,9 +2953,9 @@ creating DateTime objects.  If unset, then "en_US" is used.
 
   $cmp = DateTime->compare_ignore_floating( $dt1, $dt2 );
 
-Compare two DateTime objects.  The semantics are compatible with
-Perl's C<sort()> function; it returns -1 if $a < $b, 0 if $a == $b, 1
-if $a > $b.
+Compare two DateTime objects.  The semantics are compatible with Perl's
+C<sort()> function; it returns -1 if $dt1 < $dt2, 0 if $dt1 == $dt2, 1 if $dt1
+> $dt2.
 
 If one of the two DateTime objects has a floating time zone, it will
 first be converted to the time zone of the other object.  This is what
@@ -3058,8 +3054,8 @@ are always true:
 
 Note that using C<delta_days> ensures that this formula always works,
 regardless of the timezone of the objects involved, as does using
-C<subtract_datetime_absolute()>.  Anything may sometimes be
-non-reversible.
+C<subtract_datetime_absolute()>. Other methods of subtraction are not
+always reversible.
 
 =back
 
@@ -3108,7 +3104,7 @@ We see similar strangeness when math crosses a DST boundary:
   $dt->add( days => 1, minutes => 3 );
   # 2003-04-06 02:01:00
 
-  $dt->add( minutes => 3 )->( days => 1 );
+  $dt->add( minutes => 3 )->add( days => 1 );
   # 2003-04-06 03:01:00
 
 Note that if you converted the datetime object to UTC first you would
@@ -3649,12 +3645,16 @@ The narrow era, if it exists (and it mostly doesn't).
 
 =item * y and y{3,}
 
-The year, zero-prefixed as needed.
+The year, zero-prefixed as needed. Negative years will start with a "-",
+and this will be included in the length calculation.
+
+In other, words the "yyyyy" pattern will format year -1234 as "-1234", not
+"-01234".
 
 =item * yy
 
-This is a special case. It always produces a two-digit year, so "1976"
-becomes "76".
+This is a special case. It always produces a two-digit year, so "1976" becomes
+"76". Negative years will start with a "-", making them one character longer.
 
 =item * Y{1,}
 
@@ -3744,15 +3744,15 @@ The day of the week in the month, from C<< $dt->weekday_of_month() >>.
 
 The modified Julian day, from C<< $dt->mjd() >>.
 
-=item * E{1,3}
+=item * E{1,3} and eee
 
 The abbreviated format form for the day of the week.
 
-=item * EEEE
+=item * EEEE and eeee
 
 The wide format form for the day of the week.
 
-=item * EEEEE
+=item * EEEEE and eeeee
 
 The narrow format form for the day of the week.
 
@@ -3762,18 +3762,6 @@ The I<local> numeric day of the week, from 1 to 7. This number depends
 on what day is considered the first day of the week, which varies by
 locale. For example, in the US, Sunday is the first day of the week,
 so this returns 2 for Monday.
-
-=item * eee
-
-The abbreviated format form for the day of the week.
-
-=item * eeee
-
-The wide format form for the day of the week.
-
-=item * eeeee
-
-The narrow format form for the day of the week.
 
 =item * c
 
