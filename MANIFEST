@@ -58,8 +58,11 @@ t/39no-so.t
 t/40leap-years.t
 t/41cldr_format.t
 t/42duration_class.t
-t/pod-coverage.t
-t/pod.t
+t/43new-params.t
 TODO
 tools/leap_seconds_header.pl
+xt/pod-coverage.t
+xt/pod-spell.t
+xt/pod.t
+xt/versions-match.t
 SIGNATURE    Added here by Module::Build

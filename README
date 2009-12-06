@@ -147,7 +147,24 @@ USAGE
     If you are going to be using doing date math, please read the section
     How Datetime Math is Done.
 
-  Time Zone Warning
+  Time Zone Warnings
+    Determining the local time zone for a system can be slow. If `$ENV{TZ}'
+    is not set, it may involve reading a number of files in /etc or
+    elsewhere. If you know that the local time zone won't change while your
+    code is running, and you need to make many objects for the local time
+    zone, it is strongly recommended that you retrieve the local time zone
+    once and cache it:
+
+      our $App::LocalTZ = DateTime::TimeZone->new( name => 'local' );
+
+      ... # then everywhere else
+
+      my $dt = DateTime->new( ..., time_zone => $App::LocalTZ );
+
+    DateTime itself does not do this internally because local time zones can
+    change, and there's no good way to determine if it's changed without
+    doing all the work to look it up.
+
     Do not try to use named time zones (like "America/Chicago") with dates
     very far in the future (thousands of years). The current implementation
     of `DateTime::TimeZone' will use a huge amount of memory calculating all
@@ -875,10 +892,10 @@ USAGE
     * math on non-UTC time zones
         If you need to do date math on objects with non-UTC time zones,
         please read the caveats below carefully. The results `DateTime.pm'
-        are predictable and correct, and mostly intuitive, but datetime math
-        gets very ugly when time zones are involved, and there are a few
-        strange corner cases involving subtraction of two datetimes across a
-        DST change.
+        produces are predictable and correct, and mostly intuitive, but
+        datetime math gets very ugly when time zones are involved, and there
+        are a few strange corner cases involving subtraction of two
+        datetimes across a DST change.
 
         If you can always use the floating or UTC time zones, you can skip
         ahead to Leap Seconds and Date Math
@@ -917,9 +934,9 @@ USAGE
 
     `DateTime.pm' always adds (or subtracts) days, then months, minutes, and
     then seconds and nanoseconds. If there are any boundary overflows, these
-    are normalized at each step. For the days and months (the calendar) the
-    local (not UTC) values are used. For minutes and seconds, the local
-    values are used. This generally just works.
+    are normalized at each step. For the days and months the local (not UTC)
+    values are used. For minutes and seconds, the local values are used.
+    This generally just works.
 
     This means that adding one month and one day to February 28, 2003 will
     produce the date April 1, 2003, not March 29, 2003.
@@ -1414,7 +1431,7 @@ USAGE
 
     The output of a CLDR pattern is always localized, when applicable.
 
-    CLDR provides the following pattenrs:
+    CLDR provides the following patterns:
 
     * G{1,3}
         The abbreviated era (BC, AD).
@@ -1633,7 +1650,7 @@ AUTHOR
     stole all the code from.
 
 COPYRIGHT
-    Copyright (c) 2003-2008 David Rolsky. All rights reserved. This program
+    Copyright (c) 2003-2009 David Rolsky. All rights reserved. This program
     is free software; you can redistribute it and/or modify it under the
     same terms as Perl itself.
 

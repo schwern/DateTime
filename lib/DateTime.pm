@@ -12,7 +12,7 @@ our $VERSION;
 
 BEGIN
 {
-    $VERSION = '0.51';
+    $VERSION = '0.53';
 
     my $loaded = 0;
     unless ( $ENV{PERL_DATETIME_PP} )
@@ -115,41 +115,46 @@ BEGIN
 __PACKAGE__->DefaultLocale('en_US');
 
 my $BasicValidate =
-    { year   => { type => SCALAR },
+    { year   => { type => SCALAR,
+                  callbacks =>
+                  { 'is an integer' =>
+                    sub { $_[0] =~ /^-?\d+$/ }
+                  },
+                },
       month  => { type => SCALAR, default => 1,
                   callbacks =>
-                  { 'is between 1 and 12' =>
-                    sub { $_[0] >= 1 && $_[0] <= 12 }
+                  { 'an integer between 1 and 12' =>
+                    sub { $_[0] =~ /^\d+$/ && $_[0] >= 1 && $_[0] <= 12 }
                   },
                 },
       day    => { type => SCALAR, default => 1,
                   callbacks =>
-                  { 'is a possible valid day of month' =>
-                    sub { $_[0] >= 1 && $_[0] <= 31 }
+                  { 'an integer which is a possible valid day of month' =>
+                    sub { $_[0] =~ /^\d+$/ && $_[0] >= 1 && $_[0] <= 31 }
                   },
                 },
       hour   => { type => SCALAR, default => 0,
                   callbacks =>
-                  { 'is between 0 and 23' =>
-                    sub { $_[0] >= 0 && $_[0] <= 23 },
+                  { 'an integer between 0 and 23' =>
+                    sub { $_[0] =~ /^\d+$/ && $_[0] >= 0 && $_[0] <= 23 },
                   },
                 },
       minute => { type => SCALAR, default => 0,
                   callbacks =>
-                  { 'is between 0 and 59' =>
-                    sub { $_[0] >= 0 && $_[0] <= 59 },
+                  { 'an integer between 0 and 59' =>
+                    sub { $_[0] =~ /^\d+$/ && $_[0] >= 0 && $_[0] <= 59 },
                   },
                 },
       second => { type => SCALAR, default => 0,
                   callbacks =>
-                  { 'is between 0 and 61' =>
-                    sub { $_[0] >= 0 && $_[0] <= 61 },
+                  { 'an integer between 0 and 61' =>
+                    sub { $_[0] =~ /^\d+$/ && $_[0] >= 0 && $_[0] <= 61 },
                   },
                 },
       nanosecond => { type => SCALAR, default => 0,
                       callbacks =>
-                      { 'cannot be negative' =>
-                        sub { $_[0] >= 0 },
+                      { 'a positive integer' =>
+                        sub { $_[0] =~ /^\d+$/ && $_[0] >= 0 },
                       }
                     },
       locale    => { type => SCALAR | OBJECT,
@@ -2142,7 +2147,23 @@ datetimes.
 If you are going to be using doing date math, please read the section
 L<How Datetime Math is Done>.
 
-=head2 Time Zone Warning
+=head2 Time Zone Warnings
+
+Determining the local time zone for a system can be slow. If C<$ENV{TZ}> is
+not set, it may involve reading a number of files in F</etc> or elsewhere. If
+you know that the local time zone won't change while your code is running, and
+you need to make many objects for the local time zone, it is strongly
+recommended that you retrieve the local time zone once and cache it:
+
+  our $App::LocalTZ = DateTime::TimeZone->new( name => 'local' );
+
+  ... # then everywhere else
+
+  my $dt = DateTime->new( ..., time_zone => $App::LocalTZ );
+
+DateTime itself does not do this internally because local time zones can
+change, and there's no good way to determine if it's changed without doing all
+the work to look it up.
 
 Do not try to use named time zones (like "America/Chicago") with dates
 very far in the future (thousands of years). The current
@@ -3026,7 +3047,7 @@ presentation:
 =item * math on non-UTC time zones
 
 If you need to do date math on objects with non-UTC time zones, please
-read the caveats below carefully.  The results C<DateTime.pm> are
+read the caveats below carefully.  The results C<DateTime.pm> produces are
 predictable and correct, and mostly intuitive, but datetime math gets
 very ugly when time zones are involved, and there are a few strange
 corner cases involving subtraction of two datetimes across a DST
@@ -3072,11 +3093,11 @@ We cannot convert between these units, except for seconds and
 nanoseconds, because there is no fixed conversion between the two
 units, because of things like leap seconds, DST changes, etc.
 
-C<DateTime.pm> always adds (or subtracts) days, then months, minutes,
-and then seconds and nanoseconds.  If there are any boundary
-overflows, these are normalized at each step.  For the days and months
-(the calendar) the local (not UTC) values are used.  For minutes and
-seconds, the local values are used.  This generally just works.
+C<DateTime.pm> always adds (or subtracts) days, then months, minutes, and then
+seconds and nanoseconds.  If there are any boundary overflows, these are
+normalized at each step.  For the days and months the local (not UTC) values
+are used.  For minutes and seconds, the local values are used.  This generally
+just works.
 
 This means that adding one month and one day to February 28, 2003 will
 produce the date April 1, 2003, not March 29, 2003.
@@ -3627,7 +3648,7 @@ provided by C<DateTime::TimeZone>, and I<do not follow the CLDR spec>.
 
 The output of a CLDR pattern is always localized, when applicable.
 
-CLDR provides the following pattenrs:
+CLDR provides the following patterns:
 
 =over 4
 
@@ -3914,7 +3935,7 @@ stole all the code from.
 
 =head1 COPYRIGHT
 
-Copyright (c) 2003-2008 David Rolsky.  All rights reserved.  This
+Copyright (c) 2003-2009 David Rolsky.  All rights reserved.  This
 program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 

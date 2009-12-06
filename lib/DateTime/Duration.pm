@@ -1,6 +1,9 @@
 package DateTime::Duration;
 
 use strict;
+use warnings;
+
+our $VERSION = '0.53';
 
 use Carp ();
 use DateTime;
@@ -609,7 +612,7 @@ stole all the code from.
 
 =head1 COPYRIGHT
 
-Copyright (c) 2003-2006 David Rolsky.  All rights reserved.  This
+Copyright (c) 2003-2009 David Rolsky.  All rights reserved.  This
 program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
