@@ -228,7 +228,7 @@ sub new
         if ( $self->time_zone->is_floating ||
              # If true, this means that the actual calculated leap
              # second does not occur in the second given to new()
-             ( $self->utc_rd_secs - 86399
+             ( $self->utc_rd_secs - (SECONDS_PER_DAY - 1)
                <
                $p{second} - 59 )
            )
@@ -285,7 +285,7 @@ sub _handle_offset_modifier
                     && $offset > 0 )
                   ||
                   ( $offset == 0
-                    && $self->{local_rd_secs} > 86399 ) )
+                    && $self->{local_rd_secs} >= SECONDS_PER_DAY ) )
               )
         {
             my $mod = $self->_day_length( $self->utc_rd_days - 1 ) - SECONDS_PER_DAY;
@@ -369,7 +369,7 @@ sub _normalize_seconds
 {
     my $self = shift;
 
-    return if $self->utc_rd_secs >= 0 && $self->utc_rd_secs <= 86399;
+    return if $self->utc_rd_secs >= 0 && $self->utc_rd_secs < SECONDS_PER_DAY;
 
     if ( $self->time_zone->is_floating )
     {
@@ -531,9 +531,9 @@ sub today { shift->now(@_)->truncate( to => 'day' ) }
         # add that to the generated seconds value later.
         my $leap_seconds = 0;
         if ( $object->can('time_zone') && ! $object->time_zone->is_floating
-             && $rd_secs > 86399 && $rd_secs <= $class->_day_length($rd_days) )
+             && $rd_secs >= SECONDS_PER_DAY && $rd_secs <= $class->_day_length($rd_days) )
         {
-            $leap_seconds = $rd_secs - 86399;
+            $leap_seconds = $rd_secs - (SECONDS_PER_DAY - 1);
             $rd_secs -= $leap_seconds;
         }
 
@@ -1307,7 +1307,7 @@ sub subtract_datetime
     {
         my ( $utc_rd_days, $utc_rd_secs ) = $smaller->utc_rd_values;
 
-        if ( $utc_rd_secs >= 86340 && ! $is_floating )
+        if ( $utc_rd_secs >= (SECONDS_PER_DAY - 60) && ! $is_floating )
         {
             # If the smaller of the two datetimes occurs in the last
             # UTC minute of the UTC day, then that minute may not be
@@ -1317,7 +1317,7 @@ sub subtract_datetime
             # how long that minute was.  If one of the datetimes is
             # floating, we just assume a minute is 60 seconds.
 
-            $minute_length = $dt1->_day_length($utc_rd_days) - 86340;
+            $minute_length = $dt1->_day_length($utc_rd_days) - (SECONDS_PER_DAY - 60);
         }
     }
 
