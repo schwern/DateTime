@@ -223,7 +223,7 @@ sub new
 
     $self->_handle_offset_modifier( $p{second} );
 
-    $self->_calc_local_rd;
+    $self->_calc_local_components;
 
     if ( $p{second} > 59 )
     {
