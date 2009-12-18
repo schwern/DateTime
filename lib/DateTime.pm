@@ -221,8 +221,6 @@ sub new
     # adding one to the local year given to the constructor.
     $self->{utc_year} = $p{year} + 1;
 
-    $self->_calc_utc_rd;
-
     $self->_handle_offset_modifier( $p{second} );
 
     $self->_calc_local_rd;
@@ -232,7 +230,7 @@ sub new
         if ( $self->time_zone->is_floating ||
              # If true, this means that the actual calculated leap
              # second does not occur in the second given to new()
-             ( $self->{utc_rd_secs} - 86399
+             ( $self->utc_rd_secs - 86399
                <
                $p{second} - 59 )
            )
@@ -270,7 +268,7 @@ sub _handle_offset_modifier
     my $second = shift;
     my $utc_is_valid = shift;
 
-    my $utc_rd_days = $self->{utc_rd_days};
+    my $utc_rd_days = $self->utc_rd_days;
 
     my $offset = $utc_is_valid ? $self->offset : $self->_offset_for_local_datetime;
 
@@ -298,6 +296,7 @@ sub _handle_offset_modifier
 
             unless ( $mod == 0 )
             {
+                $self->utc_rd_secs;     # make sure it exists
                 $self->{utc_rd_secs} -= $mod;
 
                 $self->_normalize_seconds;
@@ -320,6 +319,7 @@ sub _handle_offset_modifier
 
             unless ( $mod == 0 )
             {
+                $self->utc_rd_secs;  # make sure it exists
                 $self->{utc_rd_secs} -= $mod;
 
                 $self->_normalize_seconds;
@@ -354,11 +354,26 @@ sub _calc_utc_rd
     $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
 }
 
+sub utc_rd_days {
+    my $self = shift;
+    $self->_calc_utc_rd() unless exists $self->{utc_rd_days};
+
+    return $self->{utc_rd_days};
+}
+
+sub utc_rd_secs {
+    my $self = shift;
+    $self->_calc_utc_rd() unless exists $self->{utc_rd_secs};
+
+    return $self->{utc_rd_secs};
+}
+
+
 sub _normalize_seconds
 {
     my $self = shift;
 
-    return if $self->{utc_rd_secs} >= 0 && $self->{utc_rd_secs} <= 86399;
+    return if $self->utc_rd_secs >= 0 && $self->utc_rd_secs <= 86399;
 
     if ( $self->time_zone->is_floating )
     {
@@ -380,15 +395,15 @@ sub _calc_local_rd
     # loops between DateTime.pm and DateTime::TimeZone
     if ( $self->time_zone->is_utc || $self->time_zone->is_floating )
     {
-        $self->{local_rd_days} = $self->{utc_rd_days};
-        $self->{local_rd_secs} = $self->{utc_rd_secs};
+        $self->{local_rd_days} = $self->utc_rd_days;
+        $self->{local_rd_secs} = $self->utc_rd_secs;
     }
     else
     {
         my $offset = $self->offset;
 
-        $self->{local_rd_days} = $self->{utc_rd_days};
-        $self->{local_rd_secs} = $self->{utc_rd_secs} + $offset;
+        $self->{local_rd_days} = $self->utc_rd_days;
+        $self->{local_rd_secs} = $self->utc_rd_secs + $offset;
 
         # intentionally ignore leap seconds here
         $self->_normalize_tai_seconds( $self->{local_rd_days}, $self->{local_rd_secs} );
@@ -409,21 +424,18 @@ sub _calc_local_components
 
     @{ $self->{local_c} }{ qw( hour minute second ) } =
         $self->_seconds_as_components
-            ( $self->{local_rd_secs}, $self->{utc_rd_secs}, $self->{offset_modifier} );
+            ( $self->{local_rd_secs}, $self->utc_rd_secs, $self->{offset_modifier} );
 }
 
 sub _calc_utc_components
 {
     my $self = shift;
 
-    die "Cannot get UTC components before UTC RD has been calculated\n"
-        unless defined $self->{utc_rd_days};
-
     @{ $self->{utc_c} }{ qw( year month day ) } =
-        $self->_rd2ymd( $self->{utc_rd_days} );
+        $self->_rd2ymd( $self->utc_rd_days );
 
     @{ $self->{utc_c} }{ qw( hour minute second ) } =
-        $self->_seconds_as_components( $self->{utc_rd_secs} );
+        $self->_seconds_as_components( $self->utc_rd_secs );
 }
 
 sub _utc_ymd
@@ -520,6 +532,7 @@ sub today { shift->now(@_)->truncate( to => 'day' ) }
         }
 
         my %args;
+        print "rd_secs: $rd_secs\n";
         @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
         @args{ qw( hour minute second ) } =
             $class->_seconds_as_components($rd_secs);
@@ -795,7 +808,7 @@ sub leap_seconds
 
     return 0 if $self->time_zone->is_floating;
 
-    return DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} );
+    return DateTime->_accumulated_leap_seconds( $self->utc_rd_days );
 }
 
 sub _stringify
@@ -898,7 +911,7 @@ sub time_zone {
     my $self = shift;
     Carp::carp('time_zone() is a read-only accessor') if @_;
 
-    return $self->{tz} if $self->{tz};
+    return $self->{tz} if exists $self->{tz};
 
     # TZ object doesn't exist yet, make and cache it.
     return $self->{tz} = DateTime::TimeZone->new( name => $self->{tz_name} );
@@ -918,11 +931,11 @@ sub locale {
 }
 *language = \&locale;
 
-sub utc_rd_values { @{ $_[0] }{ 'utc_rd_days', 'utc_rd_secs', 'rd_nanosecs' } }
+sub utc_rd_values { $_[0]->utc_rd_days, $_[0]->utc_rd_secs, $_[0]->{rd_nanosecs} }
 sub local_rd_values { @{ $_[0] }{ 'local_rd_days', 'local_rd_secs', 'rd_nanosecs' } }
 
 # NOTE: no nanoseconds, no leap seconds
-sub utc_rd_as_seconds   { ( $_[0]->{utc_rd_days} * SECONDS_PER_DAY ) + $_[0]->{utc_rd_secs} }
+sub utc_rd_as_seconds   { ( $_[0]->utc_rd_days * SECONDS_PER_DAY ) + $_[0]->utc_rd_secs }
 
 # NOTE: no nanoseconds, no leap seconds
 sub local_rd_as_seconds { ( $_[0]->{local_rd_days} * SECONDS_PER_DAY ) + $_[0]->{local_rd_secs} }
@@ -932,12 +945,12 @@ sub jd
 {
     my $self = shift;
 
-    my $jd = $self->{utc_rd_days} + 1_721_424.5;
+    my $jd = $self->utc_rd_days + 1_721_424.5;
 
-    my $day_length = $self->_day_length( $self->{utc_rd_days} );
+    my $day_length = $self->_day_length( $self->utc_rd_days );
 
     return ( $jd +
-             ( $self->{utc_rd_secs} / $day_length )  +
+             ( $self->utc_rd_secs / $day_length )  +
              ( $self->{rd_nanosecs} / $day_length / MAX_NANOSECONDS )
            );
 }
@@ -1429,11 +1442,11 @@ sub subtract_datetime_absolute
     my $dt = shift;
 
     my $utc_rd_secs1 = $self->utc_rd_as_seconds;
-    $utc_rd_secs1 += DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} )
+    $utc_rd_secs1 += DateTime->_accumulated_leap_seconds( $self->utc_rd_days )
 	if ! $self->time_zone->is_floating;
 
     my $utc_rd_secs2 = $dt->utc_rd_as_seconds;
-    $utc_rd_secs2 += DateTime->_accumulated_leap_seconds( $dt->{utc_rd_days} )
+    $utc_rd_secs2 += DateTime->_accumulated_leap_seconds( $dt->utc_rd_days )
 	if ! $dt->time_zone->is_floating;
 
     my $seconds = $utc_rd_secs1 - $utc_rd_secs2;
@@ -1662,6 +1675,7 @@ sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 
         if ( $deltas{minutes} )
         {
+            $self->utc_rd_secs;  # make sure it exists
             $self->{utc_rd_secs} += $deltas{minutes} * 60;
 
             # This intentionally ignores leap seconds
@@ -1670,6 +1684,7 @@ sub subtract_duration { return $_[0]->add_duration( $_[1]->inverse ) }
 
         if ( $deltas{seconds} || $deltas{nanoseconds} )
         {
+            $self->utc_rd_secs;  # make sure it exists
             $self->{utc_rd_secs} += $deltas{seconds};
 
             if ( $deltas{nanoseconds} )
@@ -1724,7 +1739,7 @@ sub _compare
 
     if ( ! ref $dt2 && ( $dt2 == INFINITY || $dt2 == NEG_INFINITY ) )
     {
-        return $dt1->{utc_rd_days} <=> $dt2;
+        return $dt1->utc_rd_days <=> $dt2;
     }
 
     unless ( DateTime::Helpers::can( $dt1, 'utc_rd_values' )

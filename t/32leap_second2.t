@@ -15,9 +15,9 @@ use DateTime;
 
     is( $t->second, 58, 'second value for leap second T-2, +0100' );
 
-    is( $t->{utc_rd_days}, 720074,
+    is( $t->utc_rd_days, 720074,
         'UTC RD days for leap second T-2' );
-    is( $t->{utc_rd_secs}, 86398,
+    is( $t->utc_rd_secs, 86398,
         'UTC RD seconds for leap second T-2' );
 
     is( $t->{local_rd_days}, 720075,
@@ -33,9 +33,9 @@ use DateTime;
                          );
 
     is( $t->second, 59, 'second value for leap second T-1, +0100' );
-    is( $t->{utc_rd_days}, 720074,
+    is( $t->utc_rd_days, 720074,
         'UTC RD days for leap second T-1' );
-    is( $t->{utc_rd_secs}, 86399,
+    is( $t->utc_rd_secs, 86399,
         'UTC RD seconds for leap second T-1' );
 
     is( $t->{local_rd_days}, 720075,
@@ -58,9 +58,9 @@ use DateTime;
             unless $t;
 
         is( $t->second, 60, 'second value for leap second T-0, +0100' );
-        is( $t->{utc_rd_days}, 720074,
+        is( $t->utc_rd_days, 720074,
             'UTC RD days for leap second T-0' );
-        is( $t->{utc_rd_secs}, 86400,
+        is( $t->utc_rd_secs, 86400,
             'UTC RD seconds for leap second T-0' );
 
         is( $t->{local_rd_days}, 720075,
@@ -77,9 +77,9 @@ use DateTime;
                          );
 
     is( $t->second, 0, 'second value for leap second T+1, +0100' );
-    is( $t->{utc_rd_days}, 720075,
+    is( $t->utc_rd_days, 720075,
         'UTC RD days for leap second T+1' );
-    is( $t->{utc_rd_secs}, 0,
+    is( $t->utc_rd_secs, 0,
         'UTC RD seconds for leap second T+1' );
 
     is( $t->{local_rd_days}, 720075,
@@ -96,9 +96,9 @@ use DateTime;
                          );
 
     is( $t->second, 1, 'second value for leap second T+2, +0100' );
-    is( $t->{utc_rd_days}, 720075,
+    is( $t->utc_rd_days, 720075,
         'UTC RD days for leap second T+2' );
-    is( $t->{utc_rd_secs}, 1,
+    is( $t->utc_rd_secs, 1,
         'UTC RD seconds for leap second T+2' );
 
     is( $t->{local_rd_days}, 720075,
@@ -114,9 +114,9 @@ use DateTime;
                          );
 
     is( $t->second, 59, 'second value for end of leap second day, +0100' );
-    is( $t->{utc_rd_days}, 720075,
+    is( $t->utc_rd_days, 720075,
         'UTC RD days for end of leap second day' );
-    is( $t->{utc_rd_secs}, 82799,
+    is( $t->utc_rd_secs, 82799,
         'UTC RD seconds for end of leap second day' );
 
     is( $t->{local_rd_days}, 720075,
@@ -133,9 +133,9 @@ use DateTime;
 
     is( $t->second, 58, 'second value for leap second T-2, -0100' );
 
-    is( $t->{utc_rd_days}, 720074,
+    is( $t->utc_rd_days, 720074,
         'UTC RD days for leap second T-2' );
-    is( $t->{utc_rd_secs}, 86398,
+    is( $t->utc_rd_secs, 86398,
         'UTC RD seconds for leap second T-2' );
 
     is( $t->{local_rd_days}, 720074,
@@ -152,9 +152,9 @@ use DateTime;
 
     is( $t->second, 59, 'second value for leap second T-1, -0100' );
 
-    is( $t->{utc_rd_days}, 720074,
+    is( $t->utc_rd_days, 720074,
         'UTC RD days for leap second T-1' );
-    is( $t->{utc_rd_secs}, 86399,
+    is( $t->utc_rd_secs, 86399,
         'UTC RD seconds for leap second T-1' );
 
     is( $t->{local_rd_days}, 720074,
@@ -178,9 +178,9 @@ use DateTime;
 
         is( $t->second, 60, 'second value for leap second T-0, -0100' );
 
-        is( $t->{utc_rd_days}, 720074,
+        is( $t->utc_rd_days, 720074,
             'UTC RD days for leap second T-0' );
-        is( $t->{utc_rd_secs}, 86400,
+        is( $t->utc_rd_secs, 86400,
             'UTC RD seconds for leap second T-0' );
 
         is( $t->{local_rd_days}, 720074,
@@ -198,9 +198,9 @@ use DateTime;
 
     is( $t->second, 0, 'second value for leap second T+1, -0100' );
 
-    is( $t->{utc_rd_days}, 720075,
+    is( $t->utc_rd_days, 720075,
         'UTC RD days for leap second T+1' );
-    is( $t->{utc_rd_secs}, 0,
+    is( $t->utc_rd_secs, 0,
         'UTC RD seconds for leap second T+1' );
 
     is( $t->{local_rd_days}, 720074,
@@ -218,9 +218,9 @@ use DateTime;
 
     is( $t->second, 1, 'second value for leap second T+2, -0100' );
 
-    is( $t->{utc_rd_days}, 720075,
+    is( $t->utc_rd_days, 720075,
         'UTC RD days for leap second T+2' );
-    is( $t->{utc_rd_secs}, 1,
+    is( $t->utc_rd_secs, 1,
         'UTC RD seconds for leap second T+2' );
 
     is( $t->{local_rd_days}, 720074,

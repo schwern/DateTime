@@ -35,7 +35,7 @@ use DateTime;
     is( $t->year, 1972, "year is 1972" );
     is( $t->minute, 59, "minute is 59" );
     is( $t->second, 60, "second is 60" );
-    is( $t->{utc_rd_secs} , 86400, "utc_rd_secs is 86400" );
+    is( $t->utc_rd_secs, 86400, "utc_rd_secs is 86400" );
 
 
     # subtract_datetime
@@ -105,7 +105,7 @@ use DateTime;
     is( $t->datetime, '1972-06-30T20:59:60', "subtract over a leap second" );
     is( $t->minute, 59, "min" );
     is( $t->second, 60, "sec" );
-    is( $t->{utc_rd_secs} , 86400, "rd_sec" );
+    is( $t->utc_rd_secs, 86400, "rd_sec" );
 }
 
 # test that we can set second to 60 (negative offset)
