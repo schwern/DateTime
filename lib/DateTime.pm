@@ -223,8 +223,6 @@ sub new
 
     $self->_handle_offset_modifier( $p{second} );
 
-    $self->_calc_local_components;
-
     if ( $p{second} > 59 )
     {
         if ( $self->time_zone->is_floating ||
@@ -408,8 +406,6 @@ sub _calc_local_rd
 
         $self->{local_rd_secs} += $self->{offset_modifier};
     }
-
-    $self->_calc_local_components;
 }
 
 sub _calc_local_components
@@ -425,6 +421,15 @@ sub _calc_local_components
             ( $self->{local_rd_secs}, $self->utc_rd_secs, $self->{offset_modifier} );
 }
 
+sub local_c {
+    my $self = shift;
+
+    # Can't just check for $self->{local_c} because other things write to it
+    # at the moment
+    $self->_calc_local_components unless exists $self->{local_c}{year};
+    return $self->{local_c};
+}
+
 sub _calc_utc_components
 {
     my $self = shift;
@@ -436,22 +441,25 @@ sub _calc_utc_components
         $self->_seconds_as_components( $self->utc_rd_secs );
 }
 
+sub utc_c {
+    my $self = shift;
+
+    $self->_calc_utc_components unless exists $self->{utc_c}{year};
+    return $self->{utc_c};
+}
+
 sub _utc_ymd
 {
     my $self = shift;
 
-    $self->_calc_utc_components unless exists $self->{utc_c}{year};
-
-    return @{ $self->{utc_c} }{ qw( year month day ) };
+    return @{ $self->utc_c }{ qw( year month day ) };
 }
 
 sub _utc_hms
 {
     my $self = shift;
 
-    $self->_calc_utc_components unless exists $self->{utc_c}{hour};
-
-    return @{ $self->{utc_c} }{ qw( hour minute second ) };
+    return @{ $self->utc_c }{ qw( hour minute second ) };
 }
 
 {
@@ -530,7 +538,6 @@ sub today { shift->now(@_)->truncate( to => 'day' ) }
         }
 
         my %args;
-        print "rd_secs: $rd_secs\n";
         @args{ qw( year month day ) } = $class->_rd2ymd($rd_days);
         @args{ qw( hour minute second ) } =
             $class->_seconds_as_components($rd_secs);
@@ -632,12 +639,14 @@ sub clone { bless { %{ $_[0] } }, ref $_[0] }
 
 sub year {
     Carp::carp('year() is a read-only accessor') if @_ > 1;
-    return $_[0]->{local_c}{year};
+    return $_[0]->local_c->{year};
 }
 
-sub ce_year { $_[0]->{local_c}{year} <= 0 ?
-              $_[0]->{local_c}{year} - 1 :
-              $_[0]->{local_c}{year} }
+sub ce_year {
+    my $year = $_[0]->local_c->{year};
+    $year-- if $year <= 0;
+    return $year;
+}
 
 sub era_name { $_[0]->{locale}->era_wide->[ $_[0]->_era_index() ] }
 
@@ -645,7 +654,7 @@ sub era_abbr { $_[0]->{locale}->era_abbreviated->[ $_[0]->_era_index() ] }
 # deprecated
 *era = \&era_abbr;
 
-sub _era_index { $_[0]->{local_c}{year} <= 0 ? 0 : 1 }
+sub _era_index { $_[0]->local_c->{year} <= 0 ? 0 : 1 }
 
 sub christian_era { $_[0]->ce_year > 0 ? 'AD' : 'BC' }
 sub secular_era   { $_[0]->ce_year > 0 ? 'CE' : 'BCE' }
@@ -656,11 +665,11 @@ sub year_with_secular_era   { (abs $_[0]->ce_year) . $_[0]->secular_era }
 
 sub month   {
     Carp::carp('month() is a read-only accessor') if @_ > 1;
-    return $_[0]->{local_c}{month};
+    return $_[0]->local_c->{month};
 }
 *mon = \&month;
 
-sub month_0 { $_[0]->{local_c}{month} - 1 }
+sub month_0 { $_[0]->local_c->{month} - 1 }
 *mon_0 = \&month_0;
 
 sub month_name { $_[0]->{locale}->month_format_wide->[ $_[0]->month_0() ] }
@@ -669,29 +678,29 @@ sub month_abbr { $_[0]->{locale}->month_format_abbreviated->[ $_[0]->month_0() ]
 
 sub day_of_month {
     Carp::carp('day_of_month() is a read-only accessor') if @_ > 1;
-    $_[0]->{local_c}{day};
+    $_[0]->local_c->{day};
 }
 *day  = \&day_of_month;
 *mday = \&day_of_month;
 
 sub weekday_of_month { use integer; ( ( $_[0]->day - 1 ) / 7 ) + 1 }
 
-sub quarter { $_[0]->{local_c}{quarter} }
+sub quarter { $_[0]->local_c->{quarter} }
 
 sub quarter_name { $_[0]->{locale}->quarter_format_wide->[ $_[0]->quarter_0() ] }
 sub quarter_abbr { $_[0]->{locale}->quarter_format_abbreviated->[ $_[0]->quarter_0() ] }
 
-sub quarter_0 { $_[0]->{local_c}{quarter} - 1 }
+sub quarter_0 { $_[0]->local_c->{quarter} - 1 }
 
-sub day_of_month_0 { $_[0]->{local_c}{day} - 1 }
+sub day_of_month_0 { $_[0]->local_c->{day} - 1 }
 *day_0  = \&day_of_month_0;
 *mday_0 = \&day_of_month_0;
 
-sub day_of_week { $_[0]->{local_c}{day_of_week} }
+sub day_of_week { $_[0]->local_c->{day_of_week} }
 *wday = \&day_of_week;
 *dow  = \&day_of_week;
 
-sub day_of_week_0 { $_[0]->{local_c}{day_of_week} - 1 }
+sub day_of_week_0 { $_[0]->local_c->{day_of_week} - 1 }
 *wday_0 = \&day_of_week_0;
 *dow_0  = \&day_of_week_0;
 
@@ -712,16 +721,16 @@ sub day_name { $_[0]->{locale}->day_format_wide->[ $_[0]->day_of_week_0() ] }
 
 sub day_abbr { $_[0]->{locale}->day_format_abbreviated->[ $_[0]->day_of_week_0() ] }
 
-sub day_of_quarter { $_[0]->{local_c}{day_of_quarter} }
+sub day_of_quarter { $_[0]->local_c->{day_of_quarter} }
 *doq = \&day_of_quarter;
 
 sub day_of_quarter_0 { $_[0]->day_of_quarter - 1 }
 *doq_0 = \&day_of_quarter_0;
 
-sub day_of_year { $_[0]->{local_c}{day_of_year} }
+sub day_of_year { $_[0]->local_c->{day_of_year} }
 *doy = \&day_of_year;
 
-sub day_of_year_0 { $_[0]->{local_c}{day_of_year} - 1 }
+sub day_of_year_0 { $_[0]->local_c->{day_of_year} - 1 }
 *doy_0 = \&day_of_year_0;
 
 sub am_or_pm { $_[0]->{locale}->am_pm_abbreviated->[ $_[0]->hour() < 12 ? 0 : 1 ] }
@@ -733,8 +742,8 @@ sub ymd
 
     return sprintf( "%0.4d%s%0.2d%s%0.2d",
                     $self->year, $sep,
-                    $self->{local_c}{month}, $sep,
-                    $self->{local_c}{day} );
+                    $self->local_c->{month}, $sep,
+                    $self->local_c->{day} );
 }
 *date = \&ymd;
 
@@ -744,8 +753,8 @@ sub mdy
     $sep = '-' unless defined $sep;
 
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
-                    $self->{local_c}{month}, $sep,
-                    $self->{local_c}{day}, $sep,
+                    $self->local_c->{month}, $sep,
+                    $self->local_c->{day}, $sep,
                     $self->year );
 }
 
@@ -755,29 +764,29 @@ sub dmy
     $sep = '-' unless defined $sep;
 
     return sprintf( "%0.2d%s%0.2d%s%0.4d",
-                    $self->{local_c}{day}, $sep,
-                    $self->{local_c}{month}, $sep,
+                    $self->local_c->{day}, $sep,
+                    $self->local_c->{month}, $sep,
                     $self->year );
 }
 
 sub hour   {
     Carp::carp('hour() is a read-only accessor') if @_ > 1;
-    return $_[0]->{local_c}{hour};
+    return $_[0]->local_c->{hour};
 }
-sub hour_1 { $_[0]->{local_c}{hour} == 0 ? 24 : $_[0]->{local_c}{hour} }
+sub hour_1 { $_[0]->local_c->{hour} == 0 ? 24 : $_[0]->local_c->{hour} }
 
 sub hour_12   { my $h = $_[0]->hour % 12; return $h ? $h : 12 }
 sub hour_12_0 { $_[0]->hour % 12 }
 
 sub minute {
     Carp::carp('minute() is a read-only accessor') if @_ > 1;
-    return $_[0]->{local_c}{minute};
+    return $_[0]->local_c->{minute};
 }
 *min = \&minute;
 
 sub second {
     Carp::carp('second() is a read-only accessor') if @_ > 1;
-    return $_[0]->{local_c}{second};
+    return $_[0]->local_c->{second};
 }
 *sec = \&second;
 
@@ -823,9 +832,9 @@ sub hms
     $sep = ':' unless defined $sep;
 
     return sprintf( "%0.2d%s%0.2d%s%0.2d",
-                    $self->{local_c}{hour}, $sep,
-                    $self->{local_c}{minute}, $sep,
-                    $self->{local_c}{second} );
+                    $self->local_c->{hour}, $sep,
+                    $self->local_c->{minute}, $sep,
+                    $self->local_c->{second} );
 }
 # don't want to override CORE::time()
 *DateTime::time = \&hms;
@@ -1901,6 +1910,10 @@ sub set_time_zone
 {
     my ( $self, $tz ) = @_;
 
+    # The code assumes the UTC RD has been calculated already,
+    # so make sure it has.
+    $self->utc_rd_days;
+
     # This is a bit of a hack but it works because time zone objects
     # are singletons, and if it doesn't work all we lose is a little
     # bit of speed.
@@ -1930,12 +1943,16 @@ sub STORABLE_freeze
     my $self = shift;
     my $cloning = shift;
 
+    my %time = (
+        utc_rd_days     => $self->utc_rd_days,
+        utc_rd_secs     => $self->utc_rd_secs,
+        rd_nanosecs     => $self->nanosecond,
+    );
+
     my $serialized = '';
-    foreach my $key ( qw( utc_rd_days
-                          utc_rd_secs
-                          rd_nanosecs ) )
+    foreach my $key ( keys %time )
     {
-        $serialized .= "$key:$self->{$key}|";
+        $serialized .= "$key:$time{$key}|";
     }
 
     # not used yet, but may be handy in the future.
