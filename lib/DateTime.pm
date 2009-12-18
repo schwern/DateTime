@@ -192,11 +192,13 @@ sub new
         $self->{locale} = DateTime::Locale->load( $p{locale} );
     }
 
-    $self->{tz} =
-        ( ref $p{time_zone} ?
-          $p{time_zone} :
-          DateTime::TimeZone->new( name => $p{time_zone} )
-        );
+    # Only create the time zone object on demand
+    if( ref $p{time_zone} ) {
+        $self->{tz} = $p{time_zone};
+    }
+    else {
+        $self->{tz_name} = $p{time_zone};
+    }
 
     $self->{local_rd_days} =
         $class->_ymd2rd( @p{ qw( year month day ) } );
@@ -227,7 +229,7 @@ sub new
 
     if ( $p{second} > 59 )
     {
-        if ( $self->{tz}->is_floating ||
+        if ( $self->time_zone->is_floating ||
              # If true, this means that the actual calculated leap
              # second does not occur in the second given to new()
              ( $self->{utc_rd_secs} - 86399
@@ -263,7 +265,7 @@ sub _handle_offset_modifier
 
     $self->{offset_modifier} = 0;
 
-    return if $self->{tz}->is_floating;
+    return if $self->time_zone->is_floating;
 
     my $second = shift;
     my $utc_is_valid = shift;
@@ -332,7 +334,7 @@ sub _calc_utc_rd
 
     delete $self->{utc_c};
 
-    if ( $self->{tz}->is_utc || $self->{tz}->is_floating )
+    if ( $self->time_zone->is_utc || $self->time_zone->is_floating )
     {
         $self->{utc_rd_days} = $self->{local_rd_days};
         $self->{utc_rd_secs} = $self->{local_rd_secs};
@@ -358,7 +360,7 @@ sub _normalize_seconds
 
     return if $self->{utc_rd_secs} >= 0 && $self->{utc_rd_secs} <= 86399;
 
-    if ( $self->{tz}->is_floating )
+    if ( $self->time_zone->is_floating )
     {
         $self->_normalize_tai_seconds( $self->{utc_rd_days}, $self->{utc_rd_secs} );
     }
@@ -376,7 +378,7 @@ sub _calc_local_rd
 
     # We must short circuit for UTC times or else we could end up with
     # loops between DateTime.pm and DateTime::TimeZone
-    if ( $self->{tz}->is_utc || $self->{tz}->is_floating )
+    if ( $self->time_zone->is_utc || $self->time_zone->is_floating )
     {
         $self->{local_rd_days} = $self->{utc_rd_days};
         $self->{local_rd_secs} = $self->{utc_rd_secs};
@@ -791,7 +793,7 @@ sub leap_seconds
 {
     my $self = shift;
 
-    return 0 if $self->{tz}->is_floating;
+    return 0 if $self->time_zone->is_floating;
 
     return DateTime->_accumulated_leap_seconds( $self->{utc_rd_days} );
 }
@@ -893,17 +895,22 @@ sub week_of_month
 }
 
 sub time_zone {
-    Carp::carp('time_zone() is a read-only accessor') if @_ > 1;
-    return $_[0]->{tz};
+    my $self = shift;
+    Carp::carp('time_zone() is a read-only accessor') if @_;
+
+    return $self->{tz} if $self->{tz};
+
+    # TZ object doesn't exist yet, make and cache it.
+    return $self->{tz} = DateTime::TimeZone->new( name => $self->{tz_name} );
 }
 
-sub offset                     { $_[0]->{tz}->offset_for_datetime( $_[0] ) }
-sub _offset_for_local_datetime { $_[0]->{tz}->offset_for_local_datetime( $_[0] ) }
+sub offset                     { $_[0]->time_zone->offset_for_datetime( $_[0] ) }
+sub _offset_for_local_datetime { $_[0]->time_zone->offset_for_local_datetime( $_[0] ) }
 
-sub is_dst { $_[0]->{tz}->is_dst_for_datetime( $_[0] ) }
+sub is_dst { $_[0]->time_zone->is_dst_for_datetime( $_[0] ) }
 
-sub time_zone_long_name  { $_[0]->{tz}->name }
-sub time_zone_short_name { $_[0]->{tz}->short_name_for_datetime( $_[0] ) }
+sub time_zone_long_name  { $_[0]->time_zone->name }
+sub time_zone_short_name { $_[0]->time_zone->short_name_for_datetime( $_[0] ) }
 
 sub locale {
     Carp::carp('locale() is a read-only accessor') if @_ > 1;
@@ -988,7 +995,7 @@ sub mjd { $_[0]->jd - 2_400_000.5 }
           'y' => sub { sprintf( '%02d', substr( $_[0]->year, -2 ) ) },
           'Y' => sub { return $_[0]->year },
           'z' => sub { DateTime::TimeZone->offset_as_string( $_[0]->offset ) },
-          'Z' => sub { $_[0]->{tz}->short_name_for_datetime( $_[0] ) },
+          'Z' => sub { $_[0]->time_zone->short_name_for_datetime( $_[0] ) },
           '%' => sub { '%' },
         );
 
@@ -1884,16 +1891,16 @@ sub set_time_zone
     # This is a bit of a hack but it works because time zone objects
     # are singletons, and if it doesn't work all we lose is a little
     # bit of speed.
-    return $self if $self->{tz} eq $tz;
+    return $self if $self->time_zone eq $tz;
 
-    my $was_floating = $self->{tz}->is_floating;
+    my $was_floating = $self->time_zone->is_floating;
 
     $self->{tz} = ref $tz ? $tz : DateTime::TimeZone->new( name => $tz );
 
     $self->_handle_offset_modifier( $self->second, 1 );
 
     # if it either was or now is floating (but not both)
-    if ( $self->{tz}->is_floating xor $was_floating )
+    if ( $self->time_zone->is_floating xor $was_floating )
     {
         $self->_calc_utc_rd;
     }
@@ -1924,7 +1931,7 @@ sub STORABLE_freeze
     # Formatter needs to be returned as a reference since it may be
     # undef or a class name, and Storable will complain if extra
     # return values aren't refs
-    return $serialized, $self->{locale}, $self->{tz}, \$self->{formatter};
+    return $serialized, $self->{locale}, $self->time_zone, \$self->{formatter};
 }
 
 sub STORABLE_thaw
