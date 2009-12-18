@@ -268,8 +268,6 @@ sub _handle_offset_modifier
     my $second = shift;
     my $utc_is_valid = shift;
 
-    my $utc_rd_days = $self->utc_rd_days;
-
     my $offset = $utc_is_valid ? $self->offset : $self->_offset_for_local_datetime;
 
     if ( $offset >= 0
@@ -279,7 +277,7 @@ sub _handle_offset_modifier
         if ( $second < 60 && $offset > 0 )
         {
             $self->{offset_modifier} =
-                $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+                $self->_day_length( $self->utc_rd_days - 1 ) - SECONDS_PER_DAY;
 
             $self->{local_rd_secs} += $self->{offset_modifier};
         }
@@ -292,7 +290,7 @@ sub _handle_offset_modifier
                     && $self->{local_rd_secs} > 86399 ) )
               )
         {
-            my $mod = $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+            my $mod = $self->_day_length( $self->utc_rd_days - 1 ) - SECONDS_PER_DAY;
 
             unless ( $mod == 0 )
             {
@@ -309,13 +307,13 @@ sub _handle_offset_modifier
         if ( $second < 60 )
         {
             $self->{offset_modifier} =
-                $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+                $self->_day_length( $self->utc_rd_days - 1 ) - SECONDS_PER_DAY;
 
             $self->{local_rd_secs} += $self->{offset_modifier};
         }
         elsif ( $second == 60 && $self->{local_rd_secs} == SECONDS_PER_DAY + $offset )
         {
-            my $mod = $self->_day_length( $utc_rd_days - 1 ) - SECONDS_PER_DAY;
+            my $mod = $self->_day_length( $self->utc_rd_days - 1 ) - SECONDS_PER_DAY;
 
             unless ( $mod == 0 )
             {
